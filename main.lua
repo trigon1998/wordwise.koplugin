@@ -127,11 +127,12 @@ function WordWise:hasDB()
     return self:getDBPath() ~= nil
 end
 
+-- Enabled state is per-book (stored in the book's sidecar), so each book
+-- remembers whether Word Wise is on. Off by default: a book is only affected
+-- once the reader turns it on there.
 function WordWise:isEnabled()
-    if self.enabled == nil then
-        self.enabled = G_reader_settings:nilOrTrue("wordwise_enabled")
-    end
-    return self.enabled
+    local ds = self.ui and self.ui.doc_settings
+    return (ds and ds:isTrue("wordwise_enabled")) or false
 end
 
 -- Known words: lemmas the user has marked "I already know this word" from the
@@ -291,38 +292,24 @@ function WordWise:defaultLineSpacing()
 end
 
 -- Turn the raised gloss spacing on/off by editing the book's ACTUAL line-spacing
--- setting -- not a runtime-only override -- so the setting and the render always
--- agree and both persist to the sidecar (position restore and progress sync then
--- see one consistent layout). On: set HINT_INTERLINE_MIN (=180%). Off: set the
--- default line spacing (no per-book original is tracked; disabling always goes
--- to the default). When `defer_relayout` is set (during PreRenderDocument,
--- before the first render) we only set the value; the initial render uses it.
-function WordWise:setLineSpacing(on, defer_relayout)
+-- setting (not a runtime-only override), which persists per-book. Only called
+-- when the reader toggles Word Wise: enabling sets HINT_INTERLINE_MIN (=180%),
+-- disabling sets the default. We never re-assert it on open, so once it is on
+-- the reader is free to lower the line spacing again and it sticks.
+function WordWise:setLineSpacing(on)
     if not self:isSupportedDocument() then return end
     local conf = self.ui.font and self.ui.font.configurable
     if not conf then return end
     conf.line_spacing = on and HINT_INTERLINE_MIN or self:defaultLineSpacing()
     self.ui.document:setInterlineSpacePercent(conf.line_spacing)
-    if not defer_relayout then
-        self.ui:handleEvent(Event:new("UpdatePos"))
-    end
-end
-
--- Apply the raised spacing before the document's first render (same point the
--- reader applies its own line spacing), so the book lays out once at the final
--- spacing and position restore drops straight into it -- no relayout, no jump.
-function WordWise:onPreRenderDocument()
-    if not self:isSupportedDocument() then return end
-    if self:isEnabled() and self:hasDB() then
-        self:setLineSpacing(true, true)
-    end
+    self.ui:handleEvent(Event:new("UpdatePos"))
 end
 
 function WordWise:onReaderReady()
     if not self:isSupportedDocument() then return end
     if self:isEnabled() and self:hasDB() then
-        -- Spacing is already applied (onPreRenderDocument) and position restored
-        -- into it; just compute and paint the hints, no relayout.
+        -- The book was left at the raised spacing (persisted per-book) when it
+        -- was turned on, so it reopens laid out correctly; just paint the hints.
         UIManager:nextTick(function() self:refresh() end)
     end
 end
@@ -416,26 +403,37 @@ function WordWise:paintHints(bb, x, y)
     -- than the page -- e.g. a word wrapped across a line break anchors on its
     -- first segment, which can sit hard against the right margin).
     --
-    -- Vertically, stack inside the blank interline band above the word (from the
-    -- word upward): word glyphs, caret, underline, gloss text. The raised
-    -- leading is split evenly above/below each line's glyphs, so the word's
-    -- glyph top is half the leading below the line-box top (box.y).
-    local leading = math.floor(self.hints[1].box.h
-        * (1 - 100 / self:currentLineSpacing()))
+    -- Vertically, the hint unit is gloss text, then the rule, then the caret
+    -- pointing down at the word. The raised leading is split evenly above/below
+    -- each line's glyphs, so the blank band above the word is centered on the
+    -- line-box top (box.y). We center the whole unit in that band so it sits in
+    -- the middle of the gap regardless of the line spacing -- but never let the
+    -- caret drop onto the word (clamp to just above it when the gap is tight).
+    local GLOSS_RULE_GAP = 1  -- padding between the gloss text bottom and the rule
+    local spacing = self:currentLineSpacing()
     local items = {}
     for _, h in ipairs(self.hints) do
-        local w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, h.text, true, false).x
+        local sz = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, h.text, true, false)
+        local w = sz.x
         local tx = math.floor(h.box.x + (h.box.w - w) / 2 + 0.5)
         local max_x = screen_w - w - 2
         if tx > max_x then tx = max_x end
         if tx < 2 then tx = 2 end
+        local leading = h.box.h * (1 - 100 / spacing)
         local word_top = h.box.y + math.floor(leading / 2)
-        local marker_y = word_top - CARET_DEPTH - 1  -- rule just above the word
+        -- Center the gloss TEXT itself in the blank band (box.y is the band's
+        -- centre): the glyph extent [baseline - y_top, baseline + y_bottom] is
+        -- centred on box.y. Keep it clear of the word below; the rule sits just
+        -- under the text and the caret points down at the word (never onto it).
+        local baseline = h.box.y + (sz.y_top - sz.y_bottom) / 2
+        baseline = math.floor(math.min(baseline, word_top - 1 - sz.y_bottom) + 0.5)
+        -- Rule sits below the text's descenders with 1px padding (never onto the word).
+        local marker_y = math.min(baseline + sz.y_bottom + GLOSS_RULE_GAP, word_top - CARET_DEPTH - 1)
         items[#items + 1] = {
             h = h, x0 = tx, x1 = tx + w, band = h.box.y,
             difficulty = h.difficulty or 5,
             marker_y = marker_y,
-            baseline = marker_y - 3,  -- gloss text just above the rule
+            baseline = baseline,
             word_cx = math.floor(h.box.x + h.box.w / 2 + 0.5),
         }
     end
@@ -495,8 +493,7 @@ function WordWise:setEnabled(on)
         })
         return
     end
-    self.enabled = on
-    G_reader_settings:saveSetting("wordwise_enabled", on)
+    self.ui.doc_settings:saveSetting("wordwise_enabled", on) -- per-book
     self:setLineSpacing(on) -- relayout + repaint; onPosUpdate recomputes hints
     if not on then
         self.hints = {}
