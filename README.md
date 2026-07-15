@@ -5,6 +5,8 @@ painted as a per-page overlay on the book you're reading (no copy, no file
 rewrite). Difficulty is adjustable: a low hint level shows only rare/hard words,
 a high one also glosses more common ones.
 
+![Word Wise showing glosses above difficult words](screenshot.png)
+
 ## Install
 
 1. Get the plugin folder — either `git clone` this repo, or use the green
