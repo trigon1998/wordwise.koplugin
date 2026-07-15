@@ -5,6 +5,27 @@ painted as a per-page overlay on the book you're reading (no copy, no file
 rewrite). Difficulty is adjustable: a low hint level shows only rare/hard words,
 a high one also glosses more common ones.
 
+## Install
+
+1. Get the plugin folder — either `git clone` this repo, or use the green
+   **Code → Download ZIP** button on GitHub and unzip it.
+2. **Rename the folder to `wordwise.koplugin`.** GitHub appends the branch name
+   to ZIP downloads, so it unzips as **`wordwise.koplugin-main`** — KOReader will
+   not recognize it until you remove the `-main` (the `.koplugin` suffix must be
+   the end of the name). Cloning the repo already gives the right name.
+3. Copy the `wordwise.koplugin` folder into KOReader's `plugins/` directory:
+   - Kindle: `/mnt/us/koreader/plugins/`
+   - Kobo: `/mnt/onboard/.adds/koreader/plugins/`
+   - Android: `koreader/plugins/`
+   - Desktop / emulator: `<koreader>/plugins/`
+4. Restart KOReader.
+
+## Activate
+
+Open a book, then: **☰ (or ⋮) → more tools → Word Wise → Show inline hints**.
+Pick a hint level (1 = only the rarest words … 5 = most hints). Short definitions
+then appear above difficult words on every page. Turn it off from the same menu.
+
 ## A dictionary is included
 
 The plugin **ships with a built-in open dictionary** (`wordwise.db`, ~30k hard
@@ -88,8 +109,3 @@ python3 build_open_dict.py candidates > candidates.tsv
   personal use only; **do not redistribute it.**
 - **Wiktionary (CC BY-SA)** via the [Proficiency](https://github.com/xxyzz/Proficiency)
   `en_en` data, reshaped into the canonical schema.
-
-## Usage
-
-Enable via the reader menu: **⋮ → more tools → Word Wise → Show inline hints**,
-and pick a hint level (1 = only the rarest words … 5 = most hints).
