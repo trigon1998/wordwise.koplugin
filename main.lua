@@ -23,6 +23,7 @@ local Event = require("ui/event")
 local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
 local RenderText = require("ui/rendertext")
+local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
@@ -48,7 +49,9 @@ local DEFAULT_LEVEL = 3           -- middle of the slider, like Kindle's default
 -- While hints are on we raise the book's line-spacing setting to this value, to
 -- open a gloss gap above each line. Disabling restores the default spacing.
 local HINT_INTERLINE_MIN = 180
-local GLOSS_FONT_SIZE = 10        -- small, like Kindle's Word Wise gloss
+local GLOSS_FONT_SIZE = 10        -- default hint font size (adjustable 6..20)
+local GLOSS_FONT_MIN = 6          -- selectable hint font-size range (slider)
+local GLOSS_FONT_MAX = 20
 local WORD_WALK_GUARD = 4000       -- hard cap on words scanned per page
 
 local WordWise = WidgetContainer:extend{
@@ -63,6 +66,10 @@ end
 
 function WordWise:getHintLevel()
     return G_reader_settings:readSetting("wordwise_hint_level") or DEFAULT_LEVEL
+end
+
+function WordWise:getGlossFontSize()
+    return G_reader_settings:readSetting("wordwise_gloss_font_size") or GLOSS_FONT_SIZE
 end
 
 -- Resolve the dictionary path: a user DB in WW_DIR (wordwise.db, else the first
@@ -164,7 +171,7 @@ function WordWise:init()
     self.ui.menu:registerToMainMenu(self)
     -- infofont is NotoSans (proportional), closer to Kindle's gloss font than
     -- the monospace infont.
-    self.gloss_face = Font:getFace("infofont", GLOSS_FONT_SIZE)
+    self.gloss_face = Font:getFace("infofont", self:getGlossFontSize())
     self.hints = {}
     -- Register the overlay painter with ReaderView.
     self.overlay = { paintTo = function(_, bb, x, y) self:paintHints(bb, x, y) end }
@@ -486,6 +493,13 @@ function WordWise:setHintLevel(value)
     self:refresh()
 end
 
+function WordWise:setGlossFontSize(value)
+    G_reader_settings:saveSetting("wordwise_gloss_font_size", value)
+    -- rebuild the cached face; paintHints re-measures gloss widths from it
+    self.gloss_face = Font:getFace("infofont", value)
+    self:refresh()
+end
+
 function WordWise:setEnabled(on)
     if on and not self:hasDB() then
         UIManager:show(InfoMessage:new{
@@ -546,6 +560,27 @@ function WordWise:getSubMenu()
                     }
                 end
                 return items
+            end,
+        },
+        {
+            text_func = function()
+                return T(_("Hint font size: %1"), self:getGlossFontSize())
+            end,
+            enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
+            keep_menu_open = true,
+            callback = function(touchmenu_instance)
+                UIManager:show(SpinWidget:new{
+                    title_text = _("Hint font size"),
+                    value = self:getGlossFontSize(),
+                    value_min = GLOSS_FONT_MIN,
+                    value_max = GLOSS_FONT_MAX,
+                    default_value = GLOSS_FONT_SIZE,
+                    keep_shown_on_apply = true, -- live preview as you slide/apply
+                    callback = function(spin)
+                        self:setGlossFontSize(spin.value)
+                        if touchmenu_instance then touchmenu_instance:updateItems() end
+                    end,
+                })
             end,
         },
     }
