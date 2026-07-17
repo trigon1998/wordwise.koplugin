@@ -103,7 +103,7 @@ function WordWise:getDBPath()
         -- One-time conversion; on slow device storage this can take a while,
         -- so show something rather than leave the UI looking hung.
         local info = InfoMessage:new{
-            text = _("Building Word Wise dictionary from this Kindle's data (one-time)…"),
+            text = self:tr("building"),
         }
         UIManager:show(info)
         UIManager:forceRePaint()
@@ -194,15 +194,16 @@ function WordWise:dictLemmaFor(dict_popup)
     return entry and entry.key or nil
 end
 
--- Localize one of the button strings ("know" / "show") to the UI language.
--- These strings aren't in KOReader's catalog (see wordwise_l10n.lua), so we
--- translate them ourselves and fall back to English via gettext.
-function WordWise:tr(which)
+-- Localize one of Word Wise's own UI strings to the current UI language. These
+-- strings aren't in KOReader's catalog (see wordwise_l10n.lua), so we translate
+-- them ourselves: look up the key for the current language, fall back to the
+-- English source (en_GB), and substitute any extra args into %1, %2, ... .
+function WordWise:tr(key, ...)
     local lang = G_reader_settings:readSetting("language")
     local t = lang and WordWiseL10N[lang]
-    if t and t[which] then return t[which] end
-    if which == "show" then return _("Show Word Wise hint") end
-    return _("I already know this word")
+    local s = (t and t[key]) or (WordWiseL10N.en_GB and WordWiseL10N.en_GB[key]) or key
+    if select("#", ...) > 0 then return T(s, ...) end
+    return s
 end
 
 -- Label for the toggle button given the popup's lemma.
@@ -503,7 +504,7 @@ end
 function WordWise:setEnabled(on)
     if on and not self:hasDB() then
         UIManager:show(InfoMessage:new{
-            text = _("No Word Wise dictionary found.\nPlace a dictionary (*.db) in:\n") .. WW_DIR,
+            text = self:tr("no_db") .. WW_DIR,
         })
         return
     end
@@ -520,7 +521,7 @@ end
 function WordWise:onDispatcherRegisterActions()
     Dispatcher:registerAction("wordwise_toggle", {
         category = "none", event = "WordWiseToggle",
-        title = _("Toggle Word Wise hints"), reader = true,
+        title = self:tr("toggle"), reader = true,
     })
 end
 
@@ -535,21 +536,21 @@ end
 function WordWise:getSubMenu()
     return {
         {
-            text = _("Show inline hints"),
+            text = self:tr("show_inline"),
             checked_func = function() return self:isEnabled() end,
             enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
             callback = function() self:setEnabled(not self:isEnabled()) end,
         },
         {
             text_func = function()
-                return T(_("Hint level: %1"), self:getHintLevel())
+                return self:tr("hint_level", self:getHintLevel())
             end,
             enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
             sub_item_table_func = function()
                 local items = {}
                 local labels = {
-                    _("1 — only the rarest words"), _("2"), _("3"), _("4"),
-                    _("5 — most hints"),
+                    self:tr("level_rarest"), "2", "3", "4",
+                    self:tr("level_most"),
                 }
                 for d = 1, MAX_LEVEL do
                     items[d] = {
@@ -564,13 +565,13 @@ function WordWise:getSubMenu()
         },
         {
             text_func = function()
-                return T(_("Hint font size: %1"), self:getGlossFontSize())
+                return self:tr("font_size_menu", self:getGlossFontSize())
             end,
             enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
             keep_menu_open = true,
             callback = function(touchmenu_instance)
                 UIManager:show(SpinWidget:new{
-                    title_text = _("Hint font size"),
+                    title_text = self:tr("font_size_title"),
                     value = self:getGlossFontSize(),
                     value_min = GLOSS_FONT_MIN,
                     value_max = GLOSS_FONT_MAX,
