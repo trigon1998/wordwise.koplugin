@@ -339,6 +339,7 @@ function WordWise:onPageUpdate() self:computePageHints() end
 
 function WordWise:computePageHints()
     self.hints = {}
+    self.text_col = nil
     if not (self:isEnabled() and self:isSupportedDocument()) then return end
     local db = self:getDB()
     if not db then return end
@@ -348,6 +349,7 @@ function WordWise:computePageHints()
     if not start_xp then return end
     local level = self:getHintLevel()
 
+    local first_xp, last_xp  -- text span actually laid out on this page
     local xp = doc:getNextVisibleWordStart(start_xp)
     local guard = 0
     while xp and guard < WORD_WALK_GUARD do
@@ -355,6 +357,8 @@ function WordWise:computePageHints()
         if not doc:isXPointerInCurrentPage(xp) then break end
         local end_xp = doc:getNextVisibleWordEnd(xp)
         if not end_xp then break end
+        first_xp = first_xp or xp
+        last_xp = end_xp
         local word = doc:getTextFromXPointers(xp, end_xp)
         if word then
             local key = word:gsub("[^%a]", "")
@@ -381,6 +385,27 @@ function WordWise:computePageHints()
         if not nxt or nxt == xp then break end
         xp = nxt
     end
+
+    -- The text column glosses must stay inside: the actual rendered extent of
+    -- this page's lines, not the page-margin setting. The book's CSS/block
+    -- margin insets the text further than getPageMargins() reports, so clamping
+    -- to the page margin still leaves glosses drifting into the blank margin.
+    -- One call returns a box per line segment; the min/max spans the real column
+    -- (justified lines reach both edges). paintHints falls back to page margins
+    -- / screen edges when this is unavailable.
+    if first_xp and last_xp then
+        local line_boxes = doc:getScreenBoxesFromPositions(first_xp, last_xp, true)
+        local lo, hi
+        for _, b in ipairs(line_boxes or {}) do
+            if b.w > 0 then
+                if not lo or b.x < lo then lo = b.x end
+                if not hi or b.x + b.w > hi then hi = b.x + b.w end
+            end
+        end
+        if lo and hi and hi > lo then
+            self.text_col = { left = lo, right = hi }
+        end
+    end
 end
 
 local GLOSS_HGAP = 8   -- minimum horizontal gap between two glosses on a line
@@ -406,10 +431,28 @@ function WordWise:paintHints(bb, x, y)
     local screen_w = bb:getWidth()
     local color = Blitbuffer.COLOR_BLACK
 
+    -- Keep glosses within the text content column, never in the page margins: a
+    -- gloss centered over a word near the column edge would otherwise spill into
+    -- (or, with a large hint font, right across) the blank margin, detached from
+    -- the text. Prefer the real rendered column (computePageHints, accounts for
+    -- the book's CSS margin); fall back to the page-margin setting, then to the
+    -- screen edges.
+    local left_bound, right_bound = 2, screen_w - 2
+    if self.text_col then
+        left_bound = self.text_col.left
+        right_bound = self.text_col.right
+    else
+        local ok, margins = pcall(function() return self.ui.document:getPageMargins() end)
+        if ok and margins and margins.left and margins.right then
+            left_bound = margins.left
+            right_bound = screen_w - margins.right
+        end
+    end
+
     -- Lay each gloss out: measure it, center it over its word, and clamp it
-    -- fully on screen (right edge first, so the left wins if the gloss is wider
-    -- than the page -- e.g. a word wrapped across a line break anchors on its
-    -- first segment, which can sit hard against the right margin).
+    -- inside the text column (right edge first, so the left wins if the gloss is
+    -- wider than the column -- e.g. a word wrapped across a line break anchors on
+    -- its first segment, which can sit hard against the right margin).
     --
     -- Vertically, the hint unit is gloss text, then the rule, then the caret
     -- pointing down at the word. The raised leading is split evenly above/below
@@ -424,9 +467,9 @@ function WordWise:paintHints(bb, x, y)
         local sz = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, h.text, true, false)
         local w = sz.x
         local tx = math.floor(h.box.x + (h.box.w - w) / 2 + 0.5)
-        local max_x = screen_w - w - 2
+        local max_x = right_bound - w
         if tx > max_x then tx = max_x end
-        if tx < 2 then tx = 2 end
+        if tx < left_bound then tx = left_bound end
         local leading = h.box.h * (1 - 100 / spacing)
         local word_top = h.box.y + math.floor(leading / 2)
         -- Center the gloss TEXT itself in the blank band (box.y is the band's
