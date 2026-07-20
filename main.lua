@@ -72,6 +72,13 @@ function WordWise:getGlossFontSize()
     return G_reader_settings:readSetting("wordwise_gloss_font_size") or GLOSS_FONT_SIZE
 end
 
+-- Whether to draw the horizontal underline rule beneath each gloss. The
+-- downward caret that points at the word is always drawn; this only controls
+-- the "underline" part. On by default. Global, like the hint level.
+function WordWise:getShowUnderline()
+    return G_reader_settings:nilOrTrue("wordwise_show_underline")
+end
+
 -- Resolve the dictionary path: a user DB in WW_DIR (wordwise.db, else the first
 -- *.db found there) overrides the dictionary bundled with the plugin. If none
 -- is present but this is a Kindle with its own Word Wise corpus on disk, that
@@ -411,14 +418,18 @@ end
 local GLOSS_HGAP = 8   -- minimum horizontal gap between two glosses on a line
 local CARET_DEPTH = 7  -- height (and half-width) of the downward caret
 
--- Draw the Kindle-style marker: a thin horizontal rule spanning [x0, x1] with a
--- small downward caret at cx that points to the exact word below it.
-local function drawWordMarker(bb, x0, x1, cx, ytop, color)
+-- Draw the Kindle-style marker: a small downward caret at cx that points to the
+-- exact word below it, optionally flanked by a thin horizontal rule spanning
+-- [x0, x1] (the "underline"). The caret always identifies the word; with_rule
+-- adds the underline when the reader wants it.
+local function drawWordMarker(bb, x0, x1, cx, ytop, color, with_rule)
     local half = CARET_DEPTH
     if cx - half < x0 then cx = x0 + half end
     if cx + half > x1 then cx = x1 - half end
-    if cx - half > x0 then bb:paintRect(x0, ytop, (cx - half) - x0, 1, color) end
-    if x1 > cx + half then bb:paintRect(cx + half, ytop, x1 - (cx + half), 1, color) end
+    if with_rule then
+        if cx - half > x0 then bb:paintRect(x0, ytop, (cx - half) - x0, 1, color) end
+        if x1 > cx + half then bb:paintRect(cx + half, ytop, x1 - (cx + half), 1, color) end
+    end
     -- two diagonals meeting at the tip (cx, ytop + half), pointing down
     for i = 0, half do
         bb:setPixel(cx - half + i, ytop + i, color)
@@ -430,6 +441,7 @@ function WordWise:paintHints(bb, x, y)
     if not (self:isEnabled() and self.hints and #self.hints > 0) then return end
     local screen_w = bb:getWidth()
     local color = Blitbuffer.COLOR_BLACK
+    local show_underline = self:getShowUnderline()
 
     -- Keep glosses within the text content column, never in the page margins: a
     -- gloss centered over a word near the column edge would otherwise spill into
@@ -519,7 +531,9 @@ function WordWise:paintHints(bb, x, y)
                 list[#list + 1] = { it.x0, it.x1 }
                 RenderText:renderUtf8Text(bb, it.x0, it.baseline, self.gloss_face,
                     it.h.text, true, false, color)
-                drawWordMarker(bb, it.x0, it.x1, it.word_cx, it.marker_y, color)
+                -- The caret always points at the word; the underline rule is
+                -- only drawn when the reader has it enabled.
+                drawWordMarker(bb, it.x0, it.x1, it.word_cx, it.marker_y, color, show_underline)
             end
         end
     end
@@ -541,6 +555,11 @@ function WordWise:setGlossFontSize(value)
     G_reader_settings:saveSetting("wordwise_gloss_font_size", value)
     -- rebuild the cached face; paintHints re-measures gloss widths from it
     self.gloss_face = Font:getFace("infofont", value)
+    self:refresh()
+end
+
+function WordWise:setShowUnderline(on)
+    G_reader_settings:saveSetting("wordwise_show_underline", on)
     self:refresh()
 end
 
@@ -605,6 +624,12 @@ function WordWise:getSubMenu()
                 end
                 return items
             end,
+        },
+        {
+            text = self:tr("underline"),
+            checked_func = function() return self:getShowUnderline() end,
+            enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
+            callback = function() self:setShowUnderline(not self:getShowUnderline()) end,
         },
         {
             text_func = function()
