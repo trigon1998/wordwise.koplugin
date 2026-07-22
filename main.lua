@@ -342,6 +342,23 @@ end
 function WordWise:onPosUpdate() self:computePageHints() end
 function WordWise:onPageUpdate() self:computePageHints() end
 
+-- A KOReader "profile" switch -- or any font / margin / line-height / style
+-- change -- re-renders the document, moving every word to a new position. Our
+-- hints cache absolute screen boxes, so after such a reflow they would keep
+-- painting glosses at the OLD positions (scattered over the new text) until the
+-- reader toggled Word Wise off and on. PosUpdate / PageUpdate don't reliably
+-- refresh + repaint the overlay on the delayed "partial rerendering" path,
+-- which KOReader enables by default, so also key off the re-render events every
+-- other position-caching module (highlights, annotations, dogear, page map,
+-- ToC, thumbnails) uses. nextTick lets the new layout settle first; refresh()
+-- recomputes the hints and its full setDirty repaints them against the final
+-- geometry.
+function WordWise:onDocumentRerendered()
+    if not (self:isEnabled() and self:isSupportedDocument()) then return end
+    UIManager:nextTick(function() self:refresh() end)
+end
+WordWise.onDocumentPartiallyRerendered = WordWise.onDocumentRerendered
+
 -- Core: enumerate this page's words, keep glosses for the difficult ones -----
 
 function WordWise:computePageHints()
@@ -437,6 +454,37 @@ local function drawWordMarker(bb, x0, x1, cx, ytop, color, with_rule)
     end
 end
 
+-- Font-level vertical metrics (max ascent/descent) for the current gloss face,
+-- the same for every gloss no matter which glyphs a given string contains.
+-- paintHints lays glosses out with these instead of each string's own ink
+-- extents (sizeUtf8Text's y_top/y_bottom), so the caret always sits the same
+-- distance below the baseline. Per-string extents made a gloss with no
+-- descenders (e.g. "an outdoor meal") pull its caret right up against the
+-- letters and look cramped, while one with descenders ("a background scene or
+-- setting") looked fine. Cached; recomputed when the face changes (font size).
+function WordWise:getGlossMetrics()
+    local face = self.gloss_face
+    local m = self._gloss_metrics
+    if m and m.face == face then return m end
+    local ascent, descent
+    local ok, height, asc = pcall(function()
+        return face.ftsize:getHeightAndAscender()
+    end)
+    if ok and height and asc then
+        ascent = math.floor(asc + 0.5)
+        descent = math.ceil(height - asc)
+    else
+        -- Fallback for builds without the freetype metrics API: probe a string
+        -- spanning the full ascender + descender range of the face.
+        local sz = RenderText:sizeUtf8Text(0, 10000, face, "Agjpqy", true, false)
+        ascent, descent = sz.y_top, sz.y_bottom
+    end
+    if descent < 0 then descent = 0 end
+    m = { face = face, ascent = ascent, descent = descent }
+    self._gloss_metrics = m
+    return m
+end
+
 function WordWise:paintHints(bb, x, y)
     if not (self:isEnabled() and self.hints and #self.hints > 0) then return end
     local screen_w = bb:getWidth()
@@ -474,24 +522,28 @@ function WordWise:paintHints(bb, x, y)
     -- caret drop onto the word (clamp to just above it when the gap is tight).
     local GLOSS_RULE_GAP = 1  -- padding between the gloss text bottom and the rule
     local spacing = self:currentLineSpacing()
+    -- Font-level ascent/descent, identical for every gloss (see getGlossMetrics):
+    -- laying glosses out by these constants -- not each string's own ink extents
+    -- -- keeps the caret a uniform distance below the baseline, so a hint with no
+    -- descenders looks the same as one with them.
+    local metrics = self:getGlossMetrics()
+    local ascent, descent = metrics.ascent, metrics.descent
     local items = {}
     for _, h in ipairs(self.hints) do
-        local sz = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, h.text, true, false)
-        local w = sz.x
+        local w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, h.text, true, false).x
         local tx = math.floor(h.box.x + (h.box.w - w) / 2 + 0.5)
         local max_x = right_bound - w
         if tx > max_x then tx = max_x end
         if tx < left_bound then tx = left_bound end
         local leading = h.box.h * (1 - 100 / spacing)
         local word_top = h.box.y + math.floor(leading / 2)
-        -- Center the gloss TEXT itself in the blank band (box.y is the band's
-        -- centre): the glyph extent [baseline - y_top, baseline + y_bottom] is
-        -- centred on box.y. Keep it clear of the word below; the rule sits just
-        -- under the text and the caret points down at the word (never onto it).
-        local baseline = h.box.y + (sz.y_top - sz.y_bottom) / 2
-        baseline = math.floor(math.min(baseline, word_top - 1 - sz.y_bottom) + 0.5)
-        -- Rule sits below the text's descenders with 1px padding (never onto the word).
-        local marker_y = math.min(baseline + sz.y_bottom + GLOSS_RULE_GAP, word_top - CARET_DEPTH - 1)
+        -- Center the font's ascent/descent box on box.y (the band's centre) so
+        -- all glosses share one baseline regardless of their glyphs. Keep it
+        -- clear of the word below; the rule sits a fixed gap under the baseline's
+        -- descent line and the caret points down at the word (never onto it).
+        local baseline = h.box.y + (ascent - descent) / 2
+        baseline = math.floor(math.min(baseline, word_top - 1 - descent) + 0.5)
+        local marker_y = math.min(baseline + descent + GLOSS_RULE_GAP, word_top - CARET_DEPTH - 1)
         items[#items + 1] = {
             h = h, x0 = tx, x1 = tx + w, band = h.box.y,
             difficulty = h.difficulty or 5,
