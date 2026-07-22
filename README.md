@@ -9,18 +9,25 @@ a high one also glosses more common ones.
 
 ## Install
 
-1. Get the plugin folder — either `git clone` this repo, or use the green
-   **Code → Download ZIP** button on GitHub and unzip it.
-2. **Rename the folder to `wordwise.koplugin`.** GitHub appends the branch name
-   to ZIP downloads, so it unzips as **`wordwise.koplugin-main`** — KOReader will
-   not recognize it until you remove the `-main` (the `.koplugin` suffix must be
-   the end of the name). Cloning the repo already gives the right name.
-3. Copy the `wordwise.koplugin` folder into KOReader's `plugins/` directory:
+1. Download **`wordwise.koplugin.zip`** from the
+   [latest release](https://github.com/asxelot/wordwise.koplugin/releases/latest)
+   and unzip it. It expands to a correctly-named `wordwise.koplugin/` folder
+   (dictionary bundled) — ready to copy, no renaming needed.
+2. Copy the `wordwise.koplugin` folder into KOReader's `plugins/` directory:
    - Kindle: `/mnt/us/koreader/plugins/`
    - Kobo: `/mnt/onboard/.adds/koreader/plugins/`
    - Android: `koreader/plugins/`
    - Desktop / emulator: `<koreader>/plugins/`
-4. Restart KOReader.
+3. Restart KOReader.
+
+<details>
+<summary>Install from source instead</summary>
+
+`git clone` this repo, or use the green **Code → Download ZIP** button and
+unzip it. A ZIP download unzips as **`wordwise.koplugin-main`** — remove the
+`-main` so the folder ends in `.koplugin`, or KOReader won't recognize it
+(cloning already gives the right name). Then copy it into `plugins/` as above.
+</details>
 
 ## Activate
 
