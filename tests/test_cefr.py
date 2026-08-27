@@ -72,3 +72,8 @@ assert 'FILE_BLOCK_TIMEOUT' in ota and 'FILE_TOTAL_TIMEOUT' in ota
 assert 'otaErrorText' in main
 assert 'update_network_retry' in (ROOT / 'wordwise_l10n.lua').read_text()
 print('ota_android_retry_guards_ok')
+assert 'function WordWise:dismissOTAStatus()' in main
+assert 'function WordWise:showOTAStatus(text)' in main
+assert 'self:showOTAStatus(self:tr("checking_update"))' in main
+assert 'self:dismissOTAStatus()' in main
+print('ota_status_cleanup_guards_ok')

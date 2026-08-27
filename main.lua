@@ -397,6 +397,7 @@ function WordWise:onCloseDocument()
         UIManager:close(self._hint_dialog)
         self._hint_dialog = nil
     end
+    self:dismissOTAStatus()
     self:flushState()
     if self.db then
         self.db:close()
@@ -874,6 +875,20 @@ function WordWise:otaErrorText(err)
     return tostring(err or "unknown error")
 end
 
+function WordWise:dismissOTAStatus()
+    if self._ota_status_message then
+        local message = self._ota_status_message
+        self._ota_status_message = nil
+        UIManager:close(message)
+    end
+end
+
+function WordWise:showOTAStatus(text)
+    self:dismissOTAStatus()
+    self._ota_status_message = InfoMessage:new{ text = text }
+    UIManager:show(self._ota_status_message)
+end
+
 function WordWise:checkForOTA()
     local co = coroutine.running()
     if not co then
@@ -886,8 +901,9 @@ function WordWise:checkForOTA()
         if not NetworkMgr:isConnected() then return end
     end
 
-    UIManager:show(InfoMessage:new{ text = self:tr("checking_update") })
+    self:showOTAStatus(self:tr("checking_update"))
     local release, err = WordWiseOTA:fetch_latest()
+    self:dismissOTAStatus()
     if not release then
         UIManager:show(InfoMessage:new{ text = self:tr("update_check_failed", self:otaErrorText(err)) })
         return
