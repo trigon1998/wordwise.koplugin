@@ -147,6 +147,9 @@ return {
         font_size_title = "Hint font size",
         cefr_level = "CEFR threshold: %1",
         open_dictionary = "Open KOReader dictionary",
+        dictionary_short = "Dictionary",
+        know_short = "Know",
+        show_short = "Show",
         cancel = "Cancel",
     },
     eo = {

@@ -431,9 +431,15 @@ function WordWise:showHintActions(hint)
     local buttons = {}
     for _, entry in ipairs(hint.senses or {}) do
         if not self:isSenseKnown(entry) then
-            local label = string.format("%s%s: %s", entry.cefr_level or "", entry.pos and (" · " .. entry.pos) or "", entry.gloss)
+            local cefr = entry.cefr_level or ""
+            local pos = entry.pos and (" · " .. entry.pos) or ""
             table.insert(buttons, {{
-                text = label,
+                text = string.format("%s%s: %s", cefr, pos, entry.gloss),
+                align = "left",
+                -- KOReader buttons do not expose mixed spans; bolding the
+                -- compact sense row keeps the CEFR/POS classification clear.
+                text_font_bold = true,
+                text_font_size = 17,
                 callback = function()
                     self:setSelectedSense(entry)
                     UIManager:close(self._hint_dialog)
@@ -441,26 +447,45 @@ function WordWise:showHintActions(hint)
             }})
         end
     end
-    table.insert(buttons, {{
-        text = self:isSenseKnown(hint.entry) and self:tr("show") or self:tr("know"),
-        callback = function()
-            self:setSenseKnown(hint.entry, not self:isSenseKnown(hint.entry))
-            UIManager:close(self._hint_dialog)
-            self:refresh()
-        end,
-    }})
-    table.insert(buttons, {{
-        text = self:tr("open_dictionary"),
-        callback = function()
-            UIManager:close(self._hint_dialog)
-            if self.ui.dictionary and self.ui.dictionary.onLookupWord then
-                self.ui.dictionary:onLookupWord(hint.word, true, { hint.box })
-            end
-        end,
-    }})
-    table.insert(buttons, {{ text = self:tr("cancel"), id = "close", callback = function() UIManager:close(self._hint_dialog) end }})
+    local current_entry = hint.entry
+    local function close_dialog()
+        if self._hint_dialog then UIManager:close(self._hint_dialog) end
+    end
+    table.insert(buttons, {
+        {
+            text = self:isSenseKnown(current_entry) and self:tr("show_short") or self:tr("know_short"),
+            callback = function()
+                self:setSenseKnown(current_entry, not self:isSenseKnown(current_entry))
+                close_dialog()
+                self:refresh()
+            end,
+            text_font_size = 15,
+            padding_h = 8,
+        },
+        {
+            text = self:tr("dictionary_short"),
+            callback = function()
+                close_dialog()
+                if self.ui.dictionary and self.ui.dictionary.onLookupWord then
+                    self.ui.dictionary:onLookupWord(hint.word, true, { hint.box })
+                end
+            end,
+            text_font_size = 15,
+            padding_h = 8,
+        },
+        {
+            text = self:tr("cancel"),
+            id = "close",
+            callback = close_dialog,
+            text_font_size = 15,
+            padding_h = 8,
+        },
+    })
     self._hint_dialog = ButtonDialog:new{
-        title = T("Word Wise: %1", hint.word),
+        title = T("Word Wise: %1", hint.word) .. "\n" .. (current_entry and current_entry.gloss or hint.text or ""),
+        title_align = "left",
+        width_factor = 0.92,
+        rows_per_page = 8,
         buttons = buttons,
     }
     UIManager:show(self._hint_dialog)
@@ -472,7 +497,7 @@ function WordWise:onHintTap(ges)
     -- getScreenBoxesFromPositions() returns screen-space boxes, matching ges.pos.
     local pos = ges.pos
     for _, hint in ipairs(self.hints or {}) do
-        if pointInBox(pos, hint.box) then return self:showHintActions(hint) end
+        if pointInBox(pos, hint.hit_box or hint.box) then return self:showHintActions(hint) end
     end
     return false
 end
@@ -551,16 +576,10 @@ end
 
 function WordWise:paintHints(bb, x, y)
     if not (self:isEnabled() and self.hints and #self.hints > 0) then return end
-    local screen_w = bb:getWidth()
+    local screen_w, screen_h = bb:getWidth(), bb:getHeight()
     local color = Blitbuffer.COLOR_BLACK
     local show_underline = self:getShowUnderline()
 
-    -- Keep glosses within the text content column, never in the page margins: a
-    -- gloss centered over a word near the column edge would otherwise spill into
-    -- (or, with a large hint font, right across) the blank margin, detached from
-    -- the text. Prefer the real rendered column (computePageHints, accounts for
-    -- the book's CSS margin); fall back to the page-margin setting, then to the
-    -- screen edges.
     local left_bound, right_bound = 2, screen_w - 2
     if self.text_col then
         left_bound = self.text_col.left
@@ -573,63 +592,70 @@ function WordWise:paintHints(bb, x, y)
         end
     end
 
-    -- Lay each gloss out: measure it, center it over its word, and clamp it
-    -- inside the text column (right edge first, so the left wins if the gloss is
-    -- wider than the column -- e.g. a word wrapped across a line break anchors on
-    -- its first segment, which can sit hard against the right margin).
-    --
-    -- Vertically, the hint unit is gloss text, then the rule, then the caret
-    -- pointing down at the word. The raised leading is split evenly above/below
-    -- each line's glyphs, so the blank band above the word is centered on the
-    -- line-box top (box.y). We center the whole unit in that band so it sits in
-    -- the middle of the gap regardless of the line spacing -- but never let the
-    -- caret drop onto the word (clamp to just above it when the gap is tight).
-    local GLOSS_RULE_GAP = 1  -- padding between the gloss text bottom and the rule
+    local GLOSS_RULE_GAP = 1
     local spacing = self:currentLineSpacing()
-    -- Font-level ascent/descent, identical for every gloss (see getGlossMetrics):
-    -- laying glosses out by these constants -- not each string's own ink extents
-    -- -- keeps the caret a uniform distance below the baseline, so a hint with no
-    -- descenders looks the same as one with them.
     local metrics = self:getGlossMetrics()
     local ascent, descent = metrics.ascent, metrics.descent
+    local max_hint_width = math.min(360, math.max(160, math.floor((right_bound - left_bound) * 0.48)))
+    local safe_top = 4
+    local safe_bottom = screen_h - 4
     local items = {}
+
     for _, h in ipairs(self.hints) do
-        local w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, h.text, true, false).x
-        local tx = math.floor(h.box.x + (h.box.w - w) / 2 + 0.5)
-        local max_x = right_bound - w
+        local full_text = h.entry and h.entry.gloss or h.text or ""
+        local full_w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, full_text, true, false).x
+        local display_text = full_text
+        if full_w > max_hint_width then
+            display_text = RenderText:truncateTextByWidth(full_text, self.gloss_face, max_hint_width, true, false)
+        end
+        local text_w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, display_text, true, false).x
+        local tx = math.floor(h.box.x + (h.box.w - text_w) / 2 + 0.5)
+        local max_x = right_bound - text_w
         if tx > max_x then tx = max_x end
         if tx < left_bound then tx = left_bound end
+
         local leading = h.box.h * (1 - 100 / spacing)
         local word_top = h.box.y + math.floor(leading / 2)
-        -- Center the font's ascent/descent box on box.y (the band's centre) so
-        -- all glosses share one baseline regardless of their glyphs. Keep it
-        -- clear of the word below; the rule sits a fixed gap under the baseline's
-        -- descent line and the caret points down at the word (never onto it).
-        local baseline = h.box.y + (ascent - descent) / 2
-        baseline = math.floor(math.min(baseline, word_top - 1 - descent) + 0.5)
-        local marker_y = math.min(baseline + descent + GLOSS_RULE_GAP, word_top - CARET_DEPTH - 1)
+        local word_bottom = h.box.y + h.box.h - math.floor(leading / 2)
+        local above_baseline = math.floor(math.min(
+            h.box.y + (ascent - descent) / 2,
+            word_top - 1 - descent
+        ) + 0.5)
+        local above_top = above_baseline - ascent
+        local above_marker_y = math.min(above_baseline + descent + GLOSS_RULE_GAP,
+            word_top - CARET_DEPTH - 1)
+
+        -- Prefer the normal above-word placement. If the full ink rectangle
+        -- would enter the top safe inset, move the whole unit below the word.
+        local below_marker_y = word_bottom + 1
+        local below_baseline = math.floor(below_marker_y + CARET_DEPTH + GLOSS_RULE_GAP + ascent + 0.5)
+        local below_top = below_baseline - ascent
+        local below = above_top < safe_top
+        local baseline = below and below_baseline or above_baseline
+        local marker_y = below and below_marker_y or above_marker_y
+        local text_top = below and below_top or above_top
+        local text_bottom = baseline + descent
+        local band = h.box.y + (below and h.box.h + 0.5 or 0)
+
         items[#items + 1] = {
-            h = h, x0 = tx, x1 = tx + w, band = h.box.y,
-            difficulty = h.difficulty or 5,
-            marker_y = marker_y,
-            baseline = baseline,
+            h = h, text = display_text, full_text = full_text,
+            x0 = tx, x1 = tx + text_w, band = band,
+            cefr_rank = (h.entry and h.entry.cefr_rank) or 99,
+            marker_y = marker_y, baseline = baseline, text_top = text_top,
+            text_bottom = text_bottom, below = below,
             word_cx = math.floor(h.box.x + h.box.w / 2 + 0.5),
         }
     end
 
-    -- De-overlap: glosses on the same line (same band) can collide
-    -- horizontally. Place them rarer-word-first (lower difficulty = more
-    -- valuable) and drop any that would still overlap an already-placed gloss,
-    -- keeping the page readable. Different lines sit in separate bands, so they
-    -- never overlap vertically.
+    -- De-overlap each above/below band, preferring harder/rarer CEFR entries.
     table.sort(items, function(a, b)
         if a.band ~= b.band then return a.band < b.band end
-        if a.difficulty ~= b.difficulty then return a.difficulty < b.difficulty end
+        if a.cefr_rank ~= b.cefr_rank then return a.cefr_rank > b.cefr_rank end
         return a.x0 < b.x0
     end)
-    local placed = {}  -- band -> list of {x0, x1}
+    local placed = {}
     for _, it in ipairs(items) do
-        if it.baseline > 2 then
+        if it.text_top >= safe_top and it.text_bottom <= safe_bottom then
             local list = placed[it.band]
             local fits = true
             if list then
@@ -645,11 +671,32 @@ function WordWise:paintHints(bb, x, y)
             end
             if fits then
                 list[#list + 1] = { it.x0, it.x1 }
+                local hit_top = math.min(it.text_top, it.h.box.y) - 5
+                local hit_bottom = math.max(it.text_bottom, it.h.box.y + it.h.box.h) + 5
+                it.h.hit_box = {
+                    x = math.max(left_bound, it.x0 - 5),
+                    y = math.max(0, hit_top),
+                    w = math.min(right_bound, it.x1 + 5) - math.max(left_bound, it.x0 - 5),
+                    h = hit_bottom - math.max(0, hit_top),
+                }
                 RenderText:renderUtf8Text(bb, it.x0, it.baseline, self.gloss_face,
-                    it.h.text, true, false, color)
-                -- The caret always points at the word; the underline rule is
-                -- only drawn when the reader has it enabled.
-                drawWordMarker(bb, it.x0, it.x1, it.word_cx, it.marker_y, color, show_underline)
+                    it.text, true, false, color)
+                if it.below then
+                    -- Below-word hints use an upward-pointing marker. The
+                    -- horizontal rule is still optional and remains compact.
+                    local half = CARET_DEPTH
+                    local cx = math.max(it.x0 + half, math.min(it.word_cx, it.x1 - half))
+                    if show_underline then
+                        if cx - half > it.x0 then bb:paintRect(it.x0, it.marker_y, cx - half - it.x0, 1, color) end
+                        if it.x1 > cx + half then bb:paintRect(cx + half, it.marker_y, it.x1 - cx - half, 1, color) end
+                    end
+                    for i = 0, half do
+                        bb:setPixel(cx - half + i, it.marker_y + half - i, color)
+                        bb:setPixel(cx + half - i, it.marker_y + half - i, color)
+                    end
+                else
+                    drawWordMarker(bb, it.x0, it.x1, it.word_cx, it.marker_y, color, show_underline)
+                end
             end
         end
     end

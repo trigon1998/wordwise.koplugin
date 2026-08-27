@@ -25,15 +25,11 @@ CEFR levels are stored as `A1`, `A2`, `B1`, `B2`, `C1`, or `C2`. Unknown or malf
 
 A word can have multiple senses. The database stores each sense as a separate row with a stable `sense_key`, part of speech, CEFR level, and source. The first eligible sense is shown by default.
 
-Tap a visible hint to open the Word Wise action dialog. The dialog lists the available senses for that word, including their CEFR level and part of speech. Selecting a sense saves it for that lemma and repaints the current page so the preferred gloss is shown on future occurrences.
+Inline hints are bounded to a compact width. When a definition is wider than that limit, the inline rendering uses a single ellipsis glyph (`…`) instead of spilling across the page; tapping the hint opens the full definition and the available senses. If an above-word hint would cross the top safe inset, the complete hint unit is placed below the word with an upward-pointing marker.
 
-The dialog also provides:
+Tap a visible hint to open the Word Wise action dialog. The sense rows are left-aligned and show the CEFR/POS classification in a compact bold row. The three action controls are placed in one horizontal row to reduce popup height. Selecting a sense saves it for that lemma and repaints the current page so the preferred gloss is shown on future occurrences.
 
-- **I already know this word** — suppresses only the selected sense, not every sense of the lemma.
-- **Open KOReader dictionary** — invokes KOReader’s standard dictionary lookup for the underlying word.
-- **Cancel** — closes the action dialog without changing the hint.
-
-A tap outside a hint is deliberately not consumed, so Android page-turn gestures continue to work normally.
+The action row provides **Know** or **Show**, **Dictionary**, and **Cancel**. **Know/Show** suppresses or restores only the selected sense, while **Dictionary** invokes KOReader’s standard dictionary lookup for the underlying word. A tap outside a hint is deliberately not consumed, so Android page-turn gestures continue to work normally.
 
 ## Database schema
 
@@ -88,4 +84,4 @@ Review the upstream repository’s licensing status before publishing a redistri
 
 The CEFR migration does not alter the page traversal, overlay painting, reflow hooks, line-spacing adjustment, or screen-box anchoring. Those are the stability-critical parts of the plugin. The migration changes database lookup and menu filtering only.
 
-The main Android-specific risk is interaction: the hint tap zone is full-screen for priority purposes but consumes a gesture only when its coordinate intersects a rendered hint. This follows KOReader’s existing highlight interaction pattern and avoids stealing ordinary page turns.
+The main Android-specific risk is interaction: the hint tap zone is full-screen for priority purposes but consumes a gesture only when its coordinate intersects a rendered hint or its compact text box. This follows KOReader’s existing highlight interaction pattern and avoids stealing ordinary page turns. Layout also checks the top and bottom safe insets before painting, and the inline definition is truncated by measured glyph width rather than character count.

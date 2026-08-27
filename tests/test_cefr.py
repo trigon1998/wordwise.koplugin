@@ -27,3 +27,12 @@ for path in [ROOT / 'main.lua', ROOT / 'wordwise_db.lua', ROOT / 'README.md']:
     assert ('WordWise' + 'Kindle') not in text
     assert ('kll.' + 'en.en') not in text
 print('no_runtime_kind le_references_ok'.replace(' ', ''))
+
+main = (ROOT / 'main.lua').read_text()
+assert 'truncateTextByWidth' in main
+assert 'below_baseline' in main and 'below_top' in main
+assert 'hit_box' in main
+assert 'align = "left"' in main
+assert 'dictionary_short' in main and 'know_short' in main
+assert 'screen_h' in main
+print('ui_layout_guards_ok')
