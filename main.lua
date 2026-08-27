@@ -22,6 +22,7 @@ local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
 local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
+local ConfirmBox = require("ui/widget/confirmbox")
 local ButtonDialog = require("ui/widget/buttondialog")
 local RenderText = require("ui/rendertext")
 local SpinWidget = require("ui/widget/spinwidget")
@@ -30,11 +31,14 @@ local Screen = require("device").screen
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
 local LuaSettings = require("luasettings")
+local NetworkMgr = require("ui/network/manager")
+local Trapper = require("ui/trapper")
 local _ = require("gettext")
 local T = require("ffi/util").template
 
 local WordWiseDB = require("wordwise_db")
 local WordWiseL10N = require("wordwise_l10n")
+local WordWiseOTA = require("wordwise_ota")
 
 -- The plugin ships a built-in open dictionary (bundled beside this file), but a
 -- user-supplied canonical-schema database dropped into WW_DIR overrides it. The
@@ -50,6 +54,8 @@ local SENSE_ROW_HEIGHT = Screen:scaleBySize(52)
 -- Directory this plugin was loaded from, used to find the bundled dictionary.
 local PLUGIN_ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("[^/\\]+$", "")
 local BUNDLED_DB = PLUGIN_ROOT .. "wordwise.db"
+local PLUGIN_DIR = PLUGIN_ROOT:gsub("[/\\\\]$", "")
+local PLUGIN_VERSION = WordWiseOTA.current_version
 
 local CEFR_LEVELS = { "A1", "A2", "B1", "B2", "C1", "C2" }
 local CEFR_RANK = { A1 = 1, A2 = 2, B1 = 3, B2 = 4, C1 = 5, C2 = 6 }
@@ -205,7 +211,12 @@ function WordWise:setSenseKnown(entry, known) self:setWordKnown(entry, known) en
 
 -- Lifecycle ----------------------------------------------------------------
 
+function WordWise:cleanupOTABackup()
+    WordWiseOTA:cleanup_backup(PLUGIN_DIR)
+end
+
 function WordWise:init()
+    self:cleanupOTABackup()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
     -- infofont is NotoSans (proportional), suitable for compact glosses.
@@ -822,6 +833,50 @@ function WordWise:showKnownWordsPath()
     })
 end
 
+function WordWise:checkForOTA()
+    local co = coroutine.running()
+    if not co then
+        Trapper:wrap(function() self:checkForOTA() end)
+        return
+    end
+    local resume = function(result) coroutine.resume(co, result) end
+    if NetworkMgr:willRerunWhenConnected(resume) then
+        coroutine.yield()
+        if not NetworkMgr:isConnected() then return end
+    end
+
+    UIManager:show(InfoMessage:new{ text = self:tr("checking_update") })
+    local release, err = WordWiseOTA:fetch_latest()
+    if not release then
+        UIManager:show(InfoMessage:new{ text = self:tr("update_check_failed", err or "unknown error") })
+        return
+    end
+    local relation = WordWiseOTA.compare_versions(release.version, PLUGIN_VERSION)
+    if relation == 0 then
+        UIManager:show(InfoMessage:new{ text = self:tr("up_to_date", PLUGIN_VERSION) })
+        return
+    elseif relation == -1 then
+        UIManager:show(InfoMessage:new{ text = self:tr("newer_installed", PLUGIN_VERSION, release.version) })
+        return
+    end
+
+    UIManager:show(ConfirmBox:new{
+        text = self:tr("update_available", PLUGIN_VERSION, release.version),
+        ok_text = self:tr("update_button"),
+        cancel_text = self:tr("cancel"),
+        ok_callback = function()
+            Trapper:wrap(function()
+                local ok, install_err = WordWiseOTA:install(release, PLUGIN_DIR)
+                if ok then
+                    UIManager:show(InfoMessage:new{ text = self:tr("update_installed") })
+                else
+                    UIManager:show(InfoMessage:new{ text = self:tr("update_install_failed", install_err or "unknown error") })
+                end
+            end)
+        end,
+    })
+end
+
 function WordWise:setEnabled(on)
     if on and not self:hasDB() then
         UIManager:show(InfoMessage:new{
@@ -895,6 +950,10 @@ function WordWise:getSubMenu()
             end,
             enabled_func = function() return self:isSupportedDocument() end,
             callback = function() self:showKnownWordsPath() end,
+        },
+        {
+            text = self:tr("check_update"),
+            callback = function() self:checkForOTA() end,
         },
         {
             text_func = function()

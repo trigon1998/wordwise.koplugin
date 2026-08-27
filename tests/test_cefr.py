@@ -48,3 +48,9 @@ assert 'SENSE_ROW_HEIGHT' in main
 assert 'height = SENSE_ROW_HEIGHT' in main
 assert 'avoid_text_truncation = true' in main
 print('popup_duplicate_and_uniform_row_guards_ok')
+ota = (ROOT / 'wordwise_ota.lua').read_text()
+assert 'trigon1998' in ota and 'wordwise.koplugin' in ota
+assert 'releases/latest' in ota and 'wordwise.koplugin.zip' in ota
+assert 'https://' in ota and 'safe_archive_path' in ota
+assert 'known_words.lua' in (ROOT / 'DEVELOPMENT.md').read_text()
+print('ota_contract_guards_ok')
