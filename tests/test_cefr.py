@@ -77,3 +77,7 @@ assert 'function WordWise:showOTAStatus(text)' in main
 assert 'self:showOTAStatus(self:tr("checking_update"))' in main
 assert 'self:dismissOTAStatus()' in main
 print('ota_status_cleanup_guards_ok')
+assert 'local width_cache = h._render_cache' in main
+assert 'h._render_cache = width_cache' in main
+assert 'local hit_box = it.h.hit_box or {}' in main
+print('render_allocation_guards_ok')

@@ -713,12 +713,29 @@ function WordWise:paintHints(bb, x, y)
 
     for _, h in ipairs(self.hints) do
         local full_text = h.entry and h.entry.gloss or h.text or ""
-        local full_w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, full_text, true, false).x
-        local display_text = full_text
-        if full_w > max_hint_width then
-            display_text = RenderText:truncateTextByWidth(full_text, self.gloss_face, max_hint_width, true, false)
+        -- Width measurement is relatively expensive and the same hint may be
+        -- painted several times without a new page layout. Keep this tiny
+        -- cache on the current-page hint object; computePageHints replaces the
+        -- hint table, so it cannot retain data across pages.
+        local width_cache = h._render_cache
+        if not width_cache or width_cache.face ~= self.gloss_face
+                or width_cache.max_width ~= max_hint_width
+                or width_cache.full_text ~= full_text then
+            local full_w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, full_text, true, false).x
+            local display_text = full_text
+            if full_w > max_hint_width then
+                display_text = RenderText:truncateTextByWidth(full_text, self.gloss_face, max_hint_width, true, false)
+            end
+            local text_w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, display_text, true, false).x
+            width_cache = {
+                face = self.gloss_face, max_width = max_hint_width,
+                full_text = full_text, display_text = display_text,
+                text_w = text_w,
+            }
+            h._render_cache = width_cache
         end
-        local text_w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, display_text, true, false).x
+        local display_text = width_cache.display_text
+        local text_w = width_cache.text_w
         local tx = math.floor(h.box.x + (h.box.w - text_w) / 2 + 0.5)
         local max_x = right_bound - text_w
         if tx > max_x then tx = max_x end
@@ -809,12 +826,12 @@ function WordWise:paintHints(bb, x, y)
                 list[#list + 1] = { it.x0, it.x1 }
                 local hit_top = math.min(it.text_top, it.h.box.y) - 5
                 local hit_bottom = math.max(it.text_bottom, it.h.box.y + it.h.box.h) + 5
-                it.h.hit_box = {
-                    x = math.max(left_bound, it.x0 - 5),
-                    y = math.max(0, hit_top),
-                    w = math.min(right_bound, it.x1 + 5) - math.max(left_bound, it.x0 - 5),
-                    h = hit_bottom - math.max(0, hit_top),
-                }
+                local hit_box = it.h.hit_box or {}
+                hit_box.x = math.max(left_bound, it.x0 - 5)
+                hit_box.y = math.max(0, hit_top)
+                hit_box.w = math.min(right_bound, it.x1 + 5) - math.max(left_bound, it.x0 - 5)
+                hit_box.h = hit_bottom - math.max(0, hit_top)
+                it.h.hit_box = hit_box
                 RenderText:renderUtf8Text(bb, it.x0, it.baseline, self.gloss_face,
                     it.text, true, false, color)
                 if it.below then
