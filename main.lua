@@ -1,6 +1,6 @@
 --[[--
-Word Wise: draw short definitions above difficult words (like Kindle's Word
-Wise) as a per-page overlay on the ORIGINAL book — no copy, no file rewrite.
+Word Wise: draw short definitions above difficult words as a per-page overlay
+on the ORIGINAL book — no copy, no file rewrite.
 
 How it works:
   * A view module registered with ReaderView paints gloss strings on top of the
@@ -22,6 +22,7 @@ local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
 local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
+local ButtonDialog = require("ui/widget/buttondialog")
 local RenderText = require("ui/rendertext")
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
@@ -31,21 +32,20 @@ local _ = require("gettext")
 local T = require("ffi/util").template
 
 local WordWiseDB = require("wordwise_db")
-local WordWiseKindle = require("wordwise_kindle")
 local WordWiseL10N = require("wordwise_l10n")
 
 -- The plugin ships a built-in open dictionary (bundled beside this file), but a
--- user-supplied canonical-schema database dropped into WW_DIR overrides it — so
--- you can swap in your own (e.g. a personal Kindle-derived DB) without deleting
--- anything. Resolution order: WW_DIR/wordwise.db, first *.db in WW_DIR, bundled.
+-- user-supplied canonical-schema database dropped into WW_DIR overrides it. The
+-- resolution order is WW_DIR/wordwise.db, first *.db in WW_DIR, then bundled.
 local WW_DIR = DataStorage:getDataDir() .. "/wordwise"
 
 -- Directory this plugin was loaded from, used to find the bundled dictionary.
 local PLUGIN_ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("[^/\\]+$", "")
 local BUNDLED_DB = PLUGIN_ROOT .. "wordwise.db"
 
-local MAX_LEVEL = 5                -- hint level 1 (rarest words only) .. 5 (most hints)
-local DEFAULT_LEVEL = 3           -- middle of the slider, like Kindle's default
+local CEFR_LEVELS = { "A1", "A2", "B1", "B2", "C1", "C2" }
+local CEFR_RANK = { A1 = 1, A2 = 2, B1 = 3, B2 = 4, C1 = 5, C2 = 6 }
+local DEFAULT_CEFR = "B1"
 -- While hints are on we raise the book's line-spacing setting to this value, to
 -- open a gloss gap above each line. Disabling restores the default spacing.
 local HINT_INTERLINE_MIN = 180
@@ -64,8 +64,13 @@ function WordWise:isSupportedDocument()
     return self.ui and self.ui.document and self.ui.rolling ~= nil and not self.ui.paging
 end
 
-function WordWise:getHintLevel()
-    return G_reader_settings:readSetting("wordwise_hint_level") or DEFAULT_LEVEL
+function WordWise:getCEFRLevel()
+    local level = G_reader_settings:readSetting("wordwise_cefr_level") or DEFAULT_CEFR
+    return CEFR_RANK[level] and level or DEFAULT_CEFR
+end
+
+function WordWise:getCEFRRank()
+    return CEFR_RANK[self:getCEFRLevel()] or CEFR_RANK[DEFAULT_CEFR]
 end
 
 function WordWise:getGlossFontSize()
@@ -79,16 +84,10 @@ function WordWise:getShowUnderline()
     return G_reader_settings:nilOrTrue("wordwise_show_underline")
 end
 
--- Resolve the dictionary path: a user DB in WW_DIR (wordwise.db, else the first
--- *.db found there) overrides the dictionary bundled with the plugin. If none
--- is present but this is a Kindle with its own Word Wise corpus on disk, that
--- is converted once into WW_DIR/wordwise.db and used from then on (personal
--- use only -- see wordwise_kindle.lua). Cached (nil = not yet resolved, false
--- = none).
+-- Resolve only open/user-supplied databases. Kindle/Amazon conversion is
+-- intentionally not part of this Android-focused fork.
 function WordWise:getDBPath()
-    if self._db_path ~= nil then
-        return self._db_path or nil
-    end
+    if self._db_path ~= nil then return self._db_path or nil end
     self._db_path = false
     if lfs.attributes(WW_DIR, "mode") == "directory" then
         local preferred = WW_DIR .. "/wordwise.db"
@@ -101,25 +100,6 @@ function WordWise:getDBPath()
                 self._db_path = WW_DIR .. "/" .. name
                 return self._db_path
             end
-        end
-    end
-    if WordWiseKindle.available() then
-        if lfs.attributes(WW_DIR, "mode") ~= "directory" then
-            lfs.mkdir(WW_DIR)
-        end
-        -- One-time conversion; on slow device storage this can take a while,
-        -- so show something rather than leave the UI looking hung.
-        local info = InfoMessage:new{
-            text = self:tr("building"),
-        }
-        UIManager:show(info)
-        UIManager:forceRePaint()
-        local converted = WW_DIR .. "/wordwise.db"
-        local ok = WordWiseKindle.convert(WordWiseKindle.KLLD_PATH, converted, BUNDLED_DB)
-        UIManager:close(info)
-        if ok then
-            self._db_path = converted
-            return converted
         end
     end
     if lfs.attributes(BUNDLED_DB, "mode") == "file" then
@@ -149,26 +129,24 @@ function WordWise:isEnabled()
     return (ds and ds:isTrue("wordwise_enabled")) or false
 end
 
--- Known words: lemmas the user has marked "I already know this word" from the
--- dictionary popup. Stored as a set { [lemma] = true } and suppressed from
--- hints across every book (global, like the hint level). Keyed by lemma so all
--- inflected forms of a word are hidden once it is marked known.
-function WordWise:getKnownWords()
-    if self.known_words == nil then
-        self.known_words = G_reader_settings:readSetting("wordwise_known_words") or {}
+-- Known hints are keyed by sense, so marking one context-sensitive gloss
+-- known does not hide every other sense of the same lemma.
+function WordWise:getKnownSenses()
+    if self.known_senses == nil then
+        self.known_senses = G_reader_settings:readSetting("wordwise_known_senses") or {}
     end
-    return self.known_words
+    return self.known_senses
 end
 
-function WordWise:isWordKnown(lemma)
-    return lemma ~= nil and self:getKnownWords()[lemma] == true
+function WordWise:isSenseKnown(entry)
+    return entry and entry.sense_key and self:getKnownSenses()[entry.sense_key] == true
 end
 
-function WordWise:setWordKnown(lemma, known)
-    if not lemma then return end
-    local kw = self:getKnownWords()
-    kw[lemma] = known or nil
-    G_reader_settings:saveSetting("wordwise_known_words", kw)
+function WordWise:setSenseKnown(entry, known)
+    if not (entry and entry.sense_key) then return end
+    local known_senses = self:getKnownSenses()
+    known_senses[entry.sense_key] = known or nil
+    G_reader_settings:saveSetting("wordwise_known_senses", known_senses)
 end
 
 -- Lifecycle ----------------------------------------------------------------
@@ -176,11 +154,12 @@ end
 function WordWise:init()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
-    -- infofont is NotoSans (proportional), closer to Kindle's gloss font than
-    -- the monospace infont.
+    -- infofont is NotoSans (proportional), suitable for compact glosses.
     self.gloss_face = Font:getFace("infofont", self:getGlossFontSize())
     self.hints = {}
-    -- Register the overlay painter with ReaderView.
+    self.selected_senses = G_reader_settings:readSetting("wordwise_selected_senses") or {}
+    -- Register the paint-only overlay. Tap handling is registered separately on
+    -- ReaderUI so a miss returns false and normal Android page turns survive.
     self.overlay = { paintTo = function(_, bb, x, y) self:paintHints(bb, x, y) end }
     if self.ui.view then
         self.ui.view:registerViewModule("wordwise", self.overlay)
@@ -188,17 +167,16 @@ function WordWise:init()
     self:registerDictButtons()
 end
 
--- The lemma this dictionary popup is looking at, if it is a word Word Wise
--- knows (so the "already know" button only appears for glossed words). Returns
--- the de-inflected lemma, matching how hints are keyed.
+-- The first sense used by the standard dictionary popup, if it is known to
+-- Word Wise. The Word Wise action buttons remain available for glossed words.
 function WordWise:dictLemmaFor(dict_popup)
     if not (dict_popup and dict_popup.word) then return nil end
     local key = dict_popup.word:gsub("[^%a]", "")
     if #key < 3 then return nil end
     local db = self:getDB()
     if not db then return nil end
-    local entry = db:lookup(key)
-    return entry and entry.key or nil
+    local entries = db:lookupAll(key)
+    return entries and entries[1] or nil
 end
 
 -- Localize one of Word Wise's own UI strings to the current UI language. These
@@ -213,26 +191,23 @@ function WordWise:tr(key, ...)
     return s
 end
 
--- Label for the toggle button given the popup's lemma.
-function WordWise:knownButtonText(lemma)
-    if lemma and self:isWordKnown(lemma) then
-        return self:tr("show")
-    end
+-- Label for the toggle button given the popup's selected sense.
+function WordWise:knownButtonText(entry)
+    if entry and self:isSenseKnown(entry) then return self:tr("show") end
     return self:tr("know")
 end
 
--- Toggle the known state for the popup's word, hide/show its hint, and flip the
--- button's own label in place (both KOReader vintages build a button_table with
--- our button id, so this works whichever registration path added the button).
+-- Toggle only the selected sense, hide/show its hint, and update the popup
+-- button in place. This preserves other senses of the same word.
 function WordWise:onKnownButtonTap(dict_popup)
-    local lemma = self:dictLemmaFor(dict_popup)
-    if not lemma then return end
-    self:setWordKnown(lemma, not self:isWordKnown(lemma))
-    self:refresh()  -- repaint the page so the hint appears/disappears now
+    local entry = self:dictLemmaFor(dict_popup)
+    if not entry then return end
+    self:setSenseKnown(entry, not self:isSenseKnown(entry))
+    self:refresh()
     local bt = dict_popup.button_table
     local button = bt and bt.button_by_id and bt.button_by_id["wordwise_known"]
     if button then
-        button:setText(self:knownButtonText(lemma), button.width)
+        button:setText(self:knownButtonText(entry), button.width)
         UIManager:setDirty(dict_popup, function() return "ui", button.dimen end)
     end
 end
@@ -321,6 +296,7 @@ function WordWise:setLineSpacing(on)
 end
 
 function WordWise:onReaderReady()
+    self:setupTouchZones()
     if not self:isSupportedDocument() then return end
     if self:isEnabled() and self:hasDB() then
         -- The book was left at the raised spacing (persisted per-book) when it
@@ -371,9 +347,9 @@ function WordWise:computePageHints()
     local page = doc:getCurrentPage()
     local start_xp = doc:getPageXPointer(page)
     if not start_xp then return end
-    local level = self:getHintLevel()
+    local cefr_rank = self:getCEFRRank()
 
-    local first_xp, last_xp  -- text span actually laid out on this page
+    local first_xp, last_xp
     local xp = doc:getNextVisibleWordStart(start_xp)
     local guard = 0
     while xp and guard < WORD_WALK_GUARD do
@@ -387,20 +363,34 @@ function WordWise:computePageHints()
         if word then
             local key = word:gsub("[^%a]", "")
             if #key >= 3 then
-                local entry = db:lookup(key)
-                -- difficulty 1 = rarest .. 5 = common; show up to the hint level,
-                -- and never for words the user has marked as already known.
-                if entry and entry.difficulty <= level and not self:isWordKnown(entry.key) then
-                    local boxes = doc:getScreenBoxesFromPositions(xp, end_xp, true)
-                    -- Use the FIRST line-segment: a word hyphenated across two
-                    -- lines otherwise yields a tall multi-line bounding box and
-                    -- the gloss lands a line too high / off-column.
-                    local sbox = boxes and boxes[1]
-                    if sbox and sbox.w > 0 and sbox.h > 0 then
-                        self.hints[#self.hints + 1] = {
-                            text = entry.gloss, box = sbox,
-                            difficulty = entry.difficulty,
-                        }
+                local entries = db:lookupAll(key)
+                if entries and #entries > 0 then
+                    local selected_key = self.selected_senses[entries[1].word:lower()]
+                    local entry
+                    for _, candidate in ipairs(entries) do
+                        if candidate.sense_key == selected_key and candidate.cefr_rank >= cefr_rank and not self:isSenseKnown(candidate) then
+                            entry = candidate
+                            break
+                        end
+                    end
+                    if not entry then
+                        for _, candidate in ipairs(entries) do
+                            if candidate.cefr_rank >= cefr_rank and not self:isSenseKnown(candidate) then
+                                entry = candidate
+                                break
+                            end
+                        end
+                    end
+                    if entry then
+                        local boxes = doc:getScreenBoxesFromPositions(xp, end_xp, true)
+                        local sbox = boxes and boxes[1]
+                        if sbox and sbox.w > 0 and sbox.h > 0 then
+                            self.hints[#self.hints + 1] = {
+                                text = entry.gloss, entry = entry, senses = entries,
+                                word = word, box = sbox,
+                                cefr_rank = entry.cefr_rank,
+                            }
+                        end
                     end
                 end
             end
@@ -410,13 +400,6 @@ function WordWise:computePageHints()
         xp = nxt
     end
 
-    -- The text column glosses must stay inside: the actual rendered extent of
-    -- this page's lines, not the page-margin setting. The book's CSS/block
-    -- margin insets the text further than getPageMargins() reports, so clamping
-    -- to the page margin still leaves glosses drifting into the blank margin.
-    -- One call returns a box per line segment; the min/max spans the real column
-    -- (justified lines reach both edges). paintHints falls back to page margins
-    -- / screen edges when this is unavailable.
     if first_xp and last_xp then
         local line_boxes = doc:getScreenBoxesFromPositions(first_xp, last_xp, true)
         local lo, hi
@@ -426,16 +409,97 @@ function WordWise:computePageHints()
                 if not hi or b.x + b.w > hi then hi = b.x + b.w end
             end
         end
-        if lo and hi and hi > lo then
-            self.text_col = { left = lo, right = hi }
+        if lo and hi and hi > lo then self.text_col = { left = lo, right = hi } end
+    end
+end
+
+-- Hit-test only rendered hints. A miss deliberately returns false so KOReader's
+-- normal tap-forward/tap-backward zones still receive the gesture.
+local function pointInBox(pos, box)
+    return pos and box and pos.x >= box.x and pos.x <= box.x + box.w
+        and pos.y >= box.y and pos.y <= box.y + box.h
+end
+
+function WordWise:setSelectedSense(entry)
+    if not (entry and entry.sense_key) then return end
+    self.selected_senses[(entry.word or ""):lower()] = entry.sense_key
+    G_reader_settings:saveSetting("wordwise_selected_senses", self.selected_senses)
+    self:refresh()
+end
+
+function WordWise:showHintActions(hint)
+    local buttons = {}
+    for _, entry in ipairs(hint.senses or {}) do
+        if not self:isSenseKnown(entry) then
+            local label = string.format("%s%s: %s", entry.cefr_level or "", entry.pos and (" · " .. entry.pos) or "", entry.gloss)
+            table.insert(buttons, {{
+                text = label,
+                callback = function()
+                    self:setSelectedSense(entry)
+                    UIManager:close(self._hint_dialog)
+                end,
+            }})
         end
     end
+    table.insert(buttons, {{
+        text = self:isSenseKnown(hint.entry) and self:tr("show") or self:tr("know"),
+        callback = function()
+            self:setSenseKnown(hint.entry, not self:isSenseKnown(hint.entry))
+            UIManager:close(self._hint_dialog)
+            self:refresh()
+        end,
+    }})
+    table.insert(buttons, {{
+        text = self:tr("open_dictionary"),
+        callback = function()
+            UIManager:close(self._hint_dialog)
+            if self.ui.dictionary and self.ui.dictionary.onLookupWord then
+                self.ui.dictionary:onLookupWord(hint.word, true, { hint.box })
+            end
+        end,
+    }})
+    table.insert(buttons, {{ text = self:tr("cancel"), id = "close", callback = function() UIManager:close(self._hint_dialog) end }})
+    self._hint_dialog = ButtonDialog:new{
+        title = T("Word Wise: %1", hint.word),
+        buttons = buttons,
+    }
+    UIManager:show(self._hint_dialog)
+    return true
+end
+
+function WordWise:onHintTap(ges)
+    if not (self:isEnabled() and ges and self.ui and self.ui.view) then return false end
+    -- getScreenBoxesFromPositions() returns screen-space boxes, matching ges.pos.
+    local pos = ges.pos
+    for _, hint in ipairs(self.hints or {}) do
+        if pointInBox(pos, hint.box) then return self:showHintActions(hint) end
+    end
+    return false
+end
+
+function WordWise:setupTouchZones()
+    if self._touch_zones_ready or not (self.ui and self.ui.registerTouchZones) then return end
+    self.ui:registerTouchZones({
+        {
+            id = "wordwise_hint_tap", ges = "tap",
+            screen_zone = { ratio_x = 0, ratio_y = 0, ratio_w = 1, ratio_h = 1 },
+            overrides = {
+                "tap_top_left_corner", "tap_top_right_corner",
+                "tap_left_bottom_corner", "tap_right_bottom_corner",
+                "readerhighlight_tap",
+                "readerfooter_tap", "readermenu_ext_tap", "readermenu_tap",
+                "tap_forward", "tap_backward",
+            },
+            handler = function(ges) return self:onHintTap(ges) end,
+        },
+    })
+    self._touch_zones_ready = true
 end
 
 local GLOSS_HGAP = 8   -- minimum horizontal gap between two glosses on a line
 local CARET_DEPTH = 7  -- height (and half-width) of the downward caret
 
--- Draw the Kindle-style marker: a small downward caret at cx that points to the
+-- Draw a small downward caret at cx that points to the
 -- exact word below it, optionally flanked by a thin horizontal rule spanning
 -- [x0, x1] (the "underline"). The caret always identifies the word; with_rule
 -- adds the underline when the reader wants it.
@@ -591,15 +655,15 @@ function WordWise:paintHints(bb, x, y)
     end
 end
 
--- Recompute + repaint (interline change already repaints; this is for the
--- difficulty/enable toggles that don't relayout).
+-- Recompute + repaint for settings that do not relayout the document.
 function WordWise:refresh()
     self:computePageHints()
     UIManager:setDirty("all", "ui")
 end
 
-function WordWise:setHintLevel(value)
-    G_reader_settings:saveSetting("wordwise_hint_level", value)
+function WordWise:setCEFRLevel(value)
+    if not CEFR_RANK[value] then return end
+    G_reader_settings:saveSetting("wordwise_cefr_level", value)
     self:refresh()
 end
 
@@ -657,21 +721,20 @@ function WordWise:getSubMenu()
         },
         {
             text_func = function()
-                return self:tr("hint_level", self:getHintLevel())
+                return self:tr("cefr_level", self:getCEFRLevel())
             end,
             enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
             sub_item_table_func = function()
                 local items = {}
-                local labels = {
-                    self:tr("level_rarest"), "2", "3", "4",
-                    self:tr("level_most"),
-                }
-                for d = 1, MAX_LEVEL do
-                    items[d] = {
-                        text = labels[d],
-                        checked_func = function() return self:getHintLevel() == d end,
+                for _, level in ipairs(CEFR_LEVELS) do
+                    items[#items + 1] = {
+                        text = level,
+                        checked_func = function() return self:getCEFRLevel() == level end,
                         radio = true,
-                        callback = function() self:setHintLevel(d) end,
+                        callback = function()
+                            G_reader_settings:saveSetting("wordwise_cefr_level", level)
+                            self:refresh()
+                        end,
                     }
                 end
                 return items

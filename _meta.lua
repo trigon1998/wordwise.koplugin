@@ -1,5 +1,5 @@
 local _ = require("gettext")
 return {
     fullname = _("Word Wise"),
-    description = _([[Shows short inline definitions above difficult words (like Kindle's Word Wise), painted as an overlay on the current page with an adjustable difficulty level. Ships with a built-in open dictionary; you can drop your own database into the wordwise data directory to override it.]]),
+    description = _([[Shows short CEFR-tagged definitions above difficult words as an Android-focused per-page overlay. Multiple senses can be selected by tapping a hint; the action dialog can mark a sense known or open KOReader's dictionary. Ships with open-data dictionary sources and supports a user database override.]]),
 }

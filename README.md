@@ -1,120 +1,91 @@
-# Word Wise (KOReader plugin)
+# Word Wise for KOReader — Android CEFR fork
 
-Shows short inline definitions above difficult words, like Kindle's Word Wise —
-painted as a per-page overlay on the book you're reading (no copy, no file
-rewrite). Difficulty is adjustable: a low hint level shows only rare/hard words,
-a high one also glosses more common ones.
+This fork is based on [asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin) and is optimized for **KOReader on Android**. It shows short definitions above difficult words as a per-page overlay without rewriting the book file.
+
+The fork removes Kindle/Amazon corpus detection and conversion. Its bundled data is built from the open CEFR-J and Octanove vocabulary profiles plus Open English WordNet definitions. The project keeps upstream attribution and records the data sources used by the build tools.
 
 ![Word Wise showing glosses above difficult words](screenshot.png)
 
-## Install
+## Install on Android
 
-1. Download **`wordwise.koplugin.zip`** from the
-   [latest release](https://github.com/asxelot/wordwise.koplugin/releases/latest)
-   and unzip it. It expands to a correctly-named `wordwise.koplugin/` folder
-   (dictionary bundled) — ready to copy, no renaming needed.
-2. Copy the `wordwise.koplugin` folder into KOReader's `plugins/` directory:
-   - Kindle: `/mnt/us/koreader/plugins/`
-   - Kobo: `/mnt/onboard/.adds/koreader/plugins/`
-   - Android: `koreader/plugins/`
-   - Desktop / emulator: `<koreader>/plugins/`
+1. Download the release ZIP and unzip it as `wordwise.koplugin`.
+2. Copy the folder to the KOReader plugins directory, normally `koreader/plugins/`.
 3. Restart KOReader.
+4. Open a reflowable book and select **☰ → More tools → Word Wise → Show inline hints**.
 
-<details>
-<summary>Install from source instead</summary>
+The plugin targets reflowable/crengine documents. Paging/fixed-layout documents are not currently supported because the overlay needs KOReader’s visible-word and screen-box APIs.
 
-`git clone` this repo, or use the green **Code → Download ZIP** button and
-unzip it. A ZIP download unzips as **`wordwise.koplugin-main`** — remove the
-`-main` so the folder ends in `.koplugin`, or KOReader won't recognize it
-(cloning already gives the right name). Then copy it into `plugins/` as above.
-</details>
+## CEFR filtering
 
-## Activate
+The menu uses a **CEFR threshold** rather than the upstream 1–5 difficulty scale. A selected threshold shows hints at that level and above. For example, choosing `B2` permits `B2`, `C1`, and `C2` entries while hiding `A1`–`B1` entries.
 
-Open a book, then: **☰ (or ⋮) → more tools → Word Wise → Show inline hints**.
-Pick a hint level (1 = only the rarest words … 5 = most hints). Short definitions
-then appear above difficult words on every page. Turn it off from the same menu.
+CEFR levels are stored as `A1`, `A2`, `B1`, `B2`, `C1`, or `C2`. Unknown or malformed levels are ignored when building the database, rather than being silently assigned a level.
 
-## A dictionary is included
+## Multiple hints and context selection
 
-The plugin **ships with a built-in open dictionary** (`wordwise.db`, ~30k hard
-words), so it works out of the box — no setup. The bundled dictionary contains
-no proprietary content and is freely redistributable (see *How the bundled
-dictionary is built* below).
+A word can have multiple senses. The database stores each sense as a separate row with a stable `sense_key`, part of speech, CEFR level, and source. The first eligible sense is shown by default.
 
-### Bring your own (optional)
+Tap a visible hint to open the Word Wise action dialog. The dialog lists the available senses for that word, including their CEFR level and part of speech. Selecting a sense saves it for that lemma and repaints the current page so the preferred gloss is shown on future occurrences.
 
-Any database you drop into KOReader's data directory **overrides** the bundled
-one, so you can supply a better/personal dictionary without deleting anything:
+The dialog also provides:
 
-```
-<koreader data dir>/wordwise/wordwise.db
-```
+- **I already know this word** — suppresses only the selected sense, not every sense of the lemma.
+- **Open KOReader dictionary** — invokes KOReader’s standard dictionary lookup for the underlying word.
+- **Cancel** — closes the action dialog without changing the hint.
 
-(Any `*.db` in `wordwise/` is used; `wordwise.db` is preferred if present.)
+A tap outside a hint is deliberately not consumed, so Android page-turn gestures continue to work normally.
 
-### Running on a Kindle? It's auto-detected
+## Database schema
 
-If no override is present and the plugin finds Kindle's own Word Wise corpus
-on disk (`/mnt/us/system/kll/kll.en.en.klld` — populated once Word Wise has
-been used at least once), it converts that into `wordwise/wordwise.db`
-automatically on first run (`wordwise_kindle.lua`) and uses it from then on.
-This is Amazon/Merriam-Webster content read from *your own device*; the
-conversion happens on-device and the result is never bundled/distributed —
-same personal-use terms as the standalone conversion below.
-
-Resolution order: `wordwise/wordwise.db` → first `*.db` in `wordwise/` →
-auto-converted Kindle corpus (device only) → bundled.
-
-### Canonical schema
-
-Whatever the source, the engine reads exactly this shape:
+The fork reads this schema:
 
 ```sql
 CREATE TABLE entries (
-    word       TEXT PRIMARY KEY COLLATE NOCASE,
-    short_def  TEXT NOT NULL,      -- the gloss shown above the word
-    difficulty INTEGER NOT NULL,   -- 1 rarest .. 5 most common
-    pos        TEXT                -- part of speech (optional)
+    id         INTEGER PRIMARY KEY,
+    word       TEXT NOT NULL COLLATE NOCASE,
+    short_def  TEXT NOT NULL,
+    cefr_level TEXT NOT NULL CHECK(cefr_level IN ('A1','A2','B1','B2','C1','C2')),
+    pos        TEXT,
+    sense_key  TEXT NOT NULL UNIQUE,
+    source     TEXT
 );
+
+CREATE INDEX entries_word_idx ON entries(word COLLATE NOCASE);
+CREATE INDEX entries_cefr_idx ON entries(cefr_level);
 ```
 
-A word is glossed when `difficulty <= hint level`. Lookups fall back to a few
-cheap English de-inflections (plurals, `-ed`, `-ing`, `-ly`) so inflected forms
-in the text still match base-form entries.
+A user database placed at `<koreader data dir>/wordwise/wordwise.db` overrides the bundled database. The runtime also accepts the upstream `difficulty` schema as a temporary compatibility path and maps its five bands approximately to CEFR. New releases should use the CEFR schema and should not rely on the compatibility mapping for authoritative CEFR classification.
 
-## How the bundled dictionary is built
+## Building the dictionary
 
-`wordwise.db` is assembled from three open ingredients (`tools/build_open_dict.py`):
-
-- **word list** — Open English WordNet lemmas (permissive license)
-- **difficulty** — word-frequency (Zipf) from the [`wordfreq`](https://pypi.org/project/wordfreq/)
-  package; only words below the "common" threshold are kept as hard words
-- **glosses** — short definitions written for this project, stored in the
-  editable source `tools/open_glosses.tsv` (`word<TAB>gloss`)
-
-To improve a definition, edit `open_glosses.tsv` and rebuild:
+The preferred build uses the open CEFR-J and Octanove profiles together with Open English WordNet:
 
 ```sh
 cd tools
-python3 build_open_dict.py build --glosses open_glosses.tsv --out ../wordwise.db
+python3 build_cefr_wordnet_dict.py \
+  --cefrj cefrj-vocabulary-profile-1.5.csv \
+  --octanove octanove-vocabulary-profile-c1c2-1.0.csv \
+  --glosses open_glosses.tsv \
+  --out ../wordwise.db
 ```
 
-To regenerate the hard-word list itself (needs `pip install wn wordfreq` and the
-`oewn:2024` lexicon):
+The builder preserves curated rows from `open_glosses.tsv`, adds multiple WordNet senses for CEFR-mapped lemmas, and never invents a CEFR level. Gloss rows without an audited CEFR mapping are reported and skipped.
 
-```sh
-python3 build_open_dict.py candidates > candidates.tsv
-```
+To build only from curated glosses, use `build_cefr_dict.py`. The removed upstream Zipf difficulty pipeline is intentionally not part of this fork’s release build.
 
-### Alternative sources
+## Data and attribution
 
-- **Kindle Word Wise (personal use).** If you're running the plugin on a
-  (jailbroken) Kindle itself, this happens automatically — see *Running on a
-  Kindle?* above. To convert a copy pulled off your own device for use
-  elsewhere (e.g. testing in the emulator), use `tools/build_wordwise_db.py`
-  on `kll.en.en.klld` (or the older `WordWise.kll.en.en.db`) and drop the
-  result in `wordwise/`. This is Amazon/Merriam-Webster licensed content — for
-  personal use only; **do not redistribute it.**
-- **Wiktionary (CC BY-SA)** via the [Proficiency](https://github.com/xxyzz/Proficiency)
-  `en_en` data, reshaped into the canonical schema.
+The bundled dictionary uses:
+
+- CEFR-J Vocabulary Profile 1.5, provided by the CEFR-J project and Tono Laboratory at Tokyo University of Foreign Studies.
+- Octanove Vocabulary Profile C1/C2 1.0, used under its stated CC BY-SA 4.0 terms.
+- Open English WordNet 2024 definitions.
+- Project-curated glosses in `tools/open_glosses.tsv`.
+
+Review the upstream repository’s licensing status before publishing a redistributed fork. The upstream repository does not expose a recognized GitHub license, so attribution and permission should be clarified with the original author before distributing modified upstream code or assets.
+
+## Compatibility and stability notes
+
+The CEFR migration does not alter the page traversal, overlay painting, reflow hooks, line-spacing adjustment, or screen-box anchoring. Those are the stability-critical parts of the plugin. The migration changes database lookup and menu filtering only.
+
+The main Android-specific risk is interaction: the hint tap zone is full-screen for priority purposes but consumes a gesture only when its coordinate intersects a rendered hint. This follows KOReader’s existing highlight interaction pattern and avoids stealing ordinary page turns.
