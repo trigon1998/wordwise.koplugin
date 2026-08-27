@@ -64,3 +64,11 @@ assert 'self._lifecycle_generation' in main
 assert 'self._hint_dialog = nil' in main
 assert 'self._db_path = nil' in main
 print('memory_and_refresh_guards_ok')
+assert 'socketutil.table_sink' in ota
+assert 'socketutil.file_sink' in ota
+assert 'attempts < 4' in ota
+assert 'transport_error == "wantread"' in ota
+assert 'FILE_BLOCK_TIMEOUT' in ota and 'FILE_TOTAL_TIMEOUT' in ota
+assert 'otaErrorText' in main
+assert 'update_network_retry' in (ROOT / 'wordwise_l10n.lua').read_text()
+print('ota_android_retry_guards_ok')

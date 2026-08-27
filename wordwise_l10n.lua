@@ -159,6 +159,7 @@ return {
         up_to_date = "Word Wise is up to date (%1).",
         newer_installed = "Installed version (%1) is newer than the latest release (%2).",
         update_check_failed = "Could not check for updates:\n%1",
+        update_network_retry = "The network connection was interrupted. Please try again when the connection is stable.",
         update_installed = "Update installed. Restart KOReader to activate it.",
         update_install_failed = "Update was not installed:\n%1",
         cancel = "Cancel",

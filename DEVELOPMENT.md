@@ -335,6 +335,8 @@ wordwise.koplugin.zip
 wordwise.koplugin.zip.sha256
 ```
 
+The updater uses KOReader's `socketutil` timeout-aware table and file sinks rather than raw LuaSocket sinks. GitHub asset downloads use the file-download timeout profile, while release metadata uses the large-content profile. Transient LuaSec errors such as `wantread`, `timeout`, and `sink timeout` are retried a bounded number of times; a permanent failure is reported as a retryable network message rather than exposing a raw transport error. The updater must still be tested on the target Android build because network behavior depends on the bundled LuaSec version and device connection.
+
 The first public OTA release should be created only after the updater itself has been merged and manually tested from a clean installation.
 
 ## 12. Release procedure

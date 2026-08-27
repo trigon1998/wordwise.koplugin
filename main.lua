@@ -867,6 +867,13 @@ function WordWise:showKnownWordsPath()
     })
 end
 
+function WordWise:otaErrorText(err)
+    if err == "wantread" or err == "timeout" or err == "sink timeout" then
+        return self:tr("update_network_retry")
+    end
+    return tostring(err or "unknown error")
+end
+
 function WordWise:checkForOTA()
     local co = coroutine.running()
     if not co then
@@ -882,7 +889,7 @@ function WordWise:checkForOTA()
     UIManager:show(InfoMessage:new{ text = self:tr("checking_update") })
     local release, err = WordWiseOTA:fetch_latest()
     if not release then
-        UIManager:show(InfoMessage:new{ text = self:tr("update_check_failed", err or "unknown error") })
+        UIManager:show(InfoMessage:new{ text = self:tr("update_check_failed", self:otaErrorText(err)) })
         return
     end
     local relation = WordWiseOTA.compare_versions(release.version, PLUGIN_VERSION)
@@ -904,7 +911,7 @@ function WordWise:checkForOTA()
                 if ok then
                     UIManager:show(InfoMessage:new{ text = self:tr("update_installed") })
                 else
-                    UIManager:show(InfoMessage:new{ text = self:tr("update_install_failed", install_err or "unknown error") })
+                    UIManager:show(InfoMessage:new{ text = self:tr("update_install_failed", self:otaErrorText(install_err)) })
                 end
             end)
         end,

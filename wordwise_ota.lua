@@ -15,7 +15,7 @@ local OTA = {
     owner = "trigon1998",
     repo = "wordwise.koplugin",
     asset_name = "wordwise.koplugin.zip",
-    current_version = "0.2.2",
+    current_version = "0.2.3",
 }
 OTA.api_url = "https://api.github.com/repos/" .. OTA.owner .. "/" .. OTA.repo .. "/releases/latest"
 
@@ -47,39 +47,60 @@ local function ensure_dir(path)
     return util.makePath(path)
 end
 
-local function request_url(url, sink)
+local function request_url(url, make_sink, timeout_pair)
     local https = require("ssl.https")
+    local socket = require("socket")
     local socketutil = require("socketutil")
     local redirects = 0
-    while redirects <= 3 do
-        socketutil:set_timeout()
-        local ok, code, headers, status = https.request{
-            url = url,
-            method = "GET",
-            headers = {
-                ["User-Agent"] = "WordWise-KOReader-OTA/1",
-                ["Accept"] = "application/vnd.github+json",
-            },
-            sink = sink,
-        }
+    local last_error
+    local attempts = 0
+    while redirects <= 3 and attempts < 4 do
+        attempts = attempts + 1
+        local sink, sink_err = make_sink()
+        if not sink then return nil, sink_err or "cannot create network sink" end
+        socketutil:set_timeout(
+            (timeout_pair and timeout_pair[1]) or socketutil.LARGE_BLOCK_TIMEOUT,
+            (timeout_pair and timeout_pair[2]) or socketutil.LARGE_TOTAL_TIMEOUT)
+        local call_ok, result, code, headers, status = pcall(function()
+            return https.request{
+                url = url,
+                method = "GET",
+                headers = {
+                    ["User-Agent"] = "WordWise-KOReader-OTA/1",
+                    ["Accept"] = "application/vnd.github+json",
+                },
+                sink = sink,
+            }
+        end)
         socketutil:reset_timeout()
-        if ok == 1 and code == 200 then return headers end
-        if (code == 301 or code == 302 or code == 303 or code == 307 or code == 308)
+        if call_ok and result == 1 and code == 200 then return headers end
+        local transport_error = call_ok and (status or code or result or "network request failed")
+            or tostring(result or "network request failed")
+        if transport_error == "wantread" or transport_error == "timeout"
+                or transport_error == "sink timeout" then
+            last_error = transport_error
+            logger.warn("Word Wise OTA transient network error", transport_error, "attempt", attempts)
+            if socket.sleep then socket.sleep(0.25) end
+        elseif (code == 301 or code == 302 or code == 303 or code == 307 or code == 308)
                 and headers and headers.location and headers.location:match("^https://") then
             url = headers.location
             redirects = redirects + 1
         else
-            return nil, status or code or "network request failed"
+            return nil, transport_error
         end
     end
-    return nil, "too many HTTPS redirects"
+    return nil, last_error or "too many HTTPS redirects"
 end
 
 function OTA:fetch_latest()
     local JSON = require("json")
     local chunks = {}
     local ltn12 = require("ltn12")
-    local _, err = request_url(self.api_url, ltn12.sink.table(chunks))
+    local socketutil = require("socketutil")
+    local _, err = request_url(self.api_url, function()
+        chunks = {}
+        return socketutil.table_sink(chunks)
+    end, { socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT })
     if err then return nil, err end
     local ok, release = pcall(JSON.decode, table.concat(chunks))
     if not ok or type(release) ~= "table" then
@@ -158,10 +179,12 @@ function OTA:install(release, plugin_dir)
     if not ensure_dir(ota_dir) then return nil, "cannot create OTA directory" end
     local zip_path = ota_dir .. "/" .. self.asset_name
     local staging = ota_dir .. "/staging"
-    local ltn12 = require("ltn12")
-    local file = io.open(zip_path, "wb")
-    if not file then return nil, "cannot create download file" end
-    local _, err = request_url(release.asset_url, ltn12.sink.file(file))
+    local socketutil = require("socketutil")
+    local _, err = request_url(release.asset_url, function()
+        local file = io.open(zip_path, "wb")
+        if not file then return nil, "cannot create download file" end
+        return socketutil.file_sink(file)
+    end, { socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT })
     if err then os.remove(zip_path); return nil, err end
     local new_dir, validation_error = self:validate_archive(zip_path, staging)
     os.remove(zip_path)
