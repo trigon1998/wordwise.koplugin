@@ -26,6 +26,7 @@ local ButtonDialog = require("ui/widget/buttondialog")
 local RenderText = require("ui/rendertext")
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
+local Screen = require("device").screen
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
 local LuaSettings = require("luasettings")
@@ -42,6 +43,9 @@ local WW_DIR = DataStorage:getDataDir() .. "/wordwise"
 local STATE_PATH = WW_DIR .. "/state.lua"
 local KNOWN_WORDS_PATH = WW_DIR .. "/known_words.lua"
 local MAX_INLINE_HINT_WIDTH = 240
+-- ButtonDialog derives row height from content unless height is explicit. Keep
+-- sense rows uniform so the popup remains scannable and scrolls on a regular grid.
+local SENSE_ROW_HEIGHT = Screen:scaleBySize(52)
 
 -- Directory this plugin was loaded from, used to find the bundled dictionary.
 local PLUGIN_ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("[^/\\]+$", "")
@@ -480,15 +484,24 @@ end
 
 function WordWise:showHintActions(hint)
     local buttons = {}
+    local current_entry = hint.entry
+    local current_key = current_entry and current_entry.sense_key
     for _, entry in ipairs(hint.senses or {}) do
-        if not self:isSenseKnown(entry) then
+        -- The selected/displayed sense is already shown in the dialog title.
+        -- Do not repeat it as a selectable row below.
+        local is_current = current_key and entry.sense_key == current_key
+        if not is_current and not self:isSenseKnown(entry) then
             local cefr = entry.cefr_level or ""
             local pos = entry.pos and (" (" .. entry.pos .. ")") or ""
             table.insert(buttons, {{
                 text = string.format("%s%s: %s", cefr, pos, entry.gloss),
                 align = "left",
-                -- Button rows support one face, so keep the classification
-                -- visually prominent while using the requested `(POS)` form.
+                -- Explicit height makes one-line and wrapped rows identical.
+                height = SENSE_ROW_HEIGHT,
+                padding_v = Screen:scaleBySize(4),
+                -- Keep the row readable; KOReader may reduce the face or wrap
+                -- within this fixed-height cell for especially long glosses.
+                avoid_text_truncation = true,
                 text_font_bold = true,
                 text_font_size = 17,
                 callback = function()
@@ -498,7 +511,6 @@ function WordWise:showHintActions(hint)
             }})
         end
     end
-    local current_entry = hint.entry
     local function close_dialog()
         if self._hint_dialog then UIManager:close(self._hint_dialog) end
     end

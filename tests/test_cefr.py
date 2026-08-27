@@ -42,3 +42,9 @@ assert 'function WordWise:isWordKnown(entry)' in main
 assert 'iv[2] + GLOSS_HGAP' in main
 assert 'pos .. ")"' in main
 print('known_storage_and_overlap_guards_ok')
+assert 'local current_key = current_entry and current_entry.sense_key' in main
+assert 'local is_current = current_key and entry.sense_key == current_key' in main
+assert 'SENSE_ROW_HEIGHT' in main
+assert 'height = SENSE_ROW_HEIGHT' in main
+assert 'avoid_text_truncation = true' in main
+print('popup_duplicate_and_uniform_row_guards_ok')
