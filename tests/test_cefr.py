@@ -36,3 +36,9 @@ assert 'align = "left"' in main
 assert 'dictionary_short' in main and 'know_short' in main
 assert 'screen_h' in main
 print('ui_layout_guards_ok')
+assert 'KNOWN_WORDS_PATH' in main
+assert 'known_words.lua' in main
+assert 'function WordWise:isWordKnown(entry)' in main
+assert 'iv[2] + GLOSS_HGAP' in main
+assert 'pos .. ")"' in main
+print('known_storage_and_overlap_guards_ok')

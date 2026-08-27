@@ -28,6 +28,7 @@ local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
+local LuaSettings = require("luasettings")
 local _ = require("gettext")
 local T = require("ffi/util").template
 
@@ -38,6 +39,9 @@ local WordWiseL10N = require("wordwise_l10n")
 -- user-supplied canonical-schema database dropped into WW_DIR overrides it. The
 -- resolution order is WW_DIR/wordwise.db, first *.db in WW_DIR, then bundled.
 local WW_DIR = DataStorage:getDataDir() .. "/wordwise"
+local STATE_PATH = WW_DIR .. "/state.lua"
+local KNOWN_WORDS_PATH = WW_DIR .. "/known_words.lua"
+local MAX_INLINE_HINT_WIDTH = 240
 
 -- Directory this plugin was loaded from, used to find the bundled dictionary.
 local PLUGIN_ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("[^/\\]+$", "")
@@ -121,6 +125,36 @@ function WordWise:hasDB()
     return self:getDBPath() ~= nil
 end
 
+function WordWise:ensureDataDir()
+    if lfs.attributes(WW_DIR, "mode") ~= "directory" then
+        lfs.mkdir(WW_DIR)
+    end
+end
+
+-- User choices live beside KOReader's data, not inside the plugin folder.
+-- LuaSettings writes a backup and atomically replaces the state file, so plugin
+-- updates do not remove known words or selected senses.
+function WordWise:getState()
+    if self.state_file then return self.state_file end
+    self:ensureDataDir()
+    self.state_file = LuaSettings:open(STATE_PATH)
+    local legacy_selected = G_reader_settings:readSetting("wordwise_selected_senses") or {}
+    local selected = self.state_file:readSetting("selected_senses", {})
+    local changed = false
+    for key, value in pairs(legacy_selected) do
+        if selected[key] == nil then selected[key] = value; changed = true end
+    end
+    self.state_file:saveSetting("selected_senses", selected)
+    if changed or not lfs.attributes(STATE_PATH, "mode") then self.state_file:flush() end
+    self.selected_senses = selected
+    return self.state_file
+end
+
+function WordWise:flushState()
+    if self.state_file then self.state_file:flush() end
+    if self.known_file then self.known_file:flush() end
+end
+
 -- Enabled state is per-book (stored in the book's sidecar), so each book
 -- remembers whether Word Wise is on. Off by default: a book is only affected
 -- once the reader turns it on there.
@@ -129,25 +163,41 @@ function WordWise:isEnabled()
     return (ds and ds:isTrue("wordwise_enabled")) or false
 end
 
--- Known hints are keyed by sense, so marking one context-sensitive gloss
--- known does not hide every other sense of the same lemma.
-function WordWise:getKnownSenses()
-    if self.known_senses == nil then
-        self.known_senses = G_reader_settings:readSetting("wordwise_known_senses") or {}
+-- Known words are keyed by lemma, so Know suppresses every sense of that
+-- word. The state is stored in KOReader's data directory and survives plugin
+-- replacement or update.
+function WordWise:getKnownWords()
+    if self.known_words then return self.known_words end
+    self:ensureDataDir()
+    self.known_file = LuaSettings:open(KNOWN_WORDS_PATH)
+    local known_words = self.known_file:readSetting("words", {})
+    -- Migrate the previous global word-level setting if it exists. The older
+    -- sense-level setting cannot be safely converted without knowing its lemma.
+    local legacy_words = G_reader_settings:readSetting("wordwise_known_words") or {}
+    local changed = false
+    for word, value in pairs(legacy_words) do
+        if known_words[word] == nil then known_words[word] = value; changed = true end
     end
-    return self.known_senses
+    self.known_file:saveSetting("words", known_words)
+    if changed or not lfs.attributes(KNOWN_WORDS_PATH, "mode") then self.known_file:flush() end
+    self.known_words = known_words
+    return known_words
 end
 
-function WordWise:isSenseKnown(entry)
-    return entry and entry.sense_key and self:getKnownSenses()[entry.sense_key] == true
+function WordWise:isWordKnown(entry)
+    return entry and entry.word and self:getKnownWords()[entry.word:lower()] == true
 end
 
-function WordWise:setSenseKnown(entry, known)
-    if not (entry and entry.sense_key) then return end
-    local known_senses = self:getKnownSenses()
-    known_senses[entry.sense_key] = known or nil
-    G_reader_settings:saveSetting("wordwise_known_senses", known_senses)
+function WordWise:setWordKnown(entry, known)
+    if not (entry and entry.word) then return end
+    local known_words = self:getKnownWords()
+    known_words[entry.word:lower()] = known or nil
+    self.known_file:saveSetting("words", known_words):flush()
 end
+
+-- Kept as aliases for callers from the earlier sense-level implementation.
+function WordWise:isSenseKnown(entry) return self:isWordKnown(entry) end
+function WordWise:setSenseKnown(entry, known) self:setWordKnown(entry, known) end
 
 -- Lifecycle ----------------------------------------------------------------
 
@@ -157,7 +207,7 @@ function WordWise:init()
     -- infofont is NotoSans (proportional), suitable for compact glosses.
     self.gloss_face = Font:getFace("infofont", self:getGlossFontSize())
     self.hints = {}
-    self.selected_senses = G_reader_settings:readSetting("wordwise_selected_senses") or {}
+    self:getState()
     -- Register the paint-only overlay. Tap handling is registered separately on
     -- ReaderUI so a miss returns false and normal Android page turns survive.
     self.overlay = { paintTo = function(_, bb, x, y) self:paintHints(bb, x, y) end }
@@ -308,6 +358,7 @@ end
 -- Close the dictionary DB when the document closes so the SQLite connection and
 -- prepared statement are released deterministically (rather than at GC).
 function WordWise:onCloseDocument()
+    self:flushState()
     if self.db then
         self.db:close()
         self.db = nil
@@ -423,7 +474,7 @@ end
 function WordWise:setSelectedSense(entry)
     if not (entry and entry.sense_key) then return end
     self.selected_senses[(entry.word or ""):lower()] = entry.sense_key
-    G_reader_settings:saveSetting("wordwise_selected_senses", self.selected_senses)
+    self:getState():saveSetting("selected_senses", self.selected_senses):flush()
     self:refresh()
 end
 
@@ -432,12 +483,12 @@ function WordWise:showHintActions(hint)
     for _, entry in ipairs(hint.senses or {}) do
         if not self:isSenseKnown(entry) then
             local cefr = entry.cefr_level or ""
-            local pos = entry.pos and (" · " .. entry.pos) or ""
+            local pos = entry.pos and (" (" .. entry.pos .. ")") or ""
             table.insert(buttons, {{
                 text = string.format("%s%s: %s", cefr, pos, entry.gloss),
                 align = "left",
-                -- KOReader buttons do not expose mixed spans; bolding the
-                -- compact sense row keeps the CEFR/POS classification clear.
+                -- Button rows support one face, so keep the classification
+                -- visually prominent while using the requested `(POS)` form.
                 text_font_bold = true,
                 text_font_size = 17,
                 callback = function()
@@ -596,7 +647,8 @@ function WordWise:paintHints(bb, x, y)
     local spacing = self:currentLineSpacing()
     local metrics = self:getGlossMetrics()
     local ascent, descent = metrics.ascent, metrics.descent
-    local max_hint_width = math.min(360, math.max(160, math.floor((right_bound - left_bound) * 0.48)))
+    local max_hint_width = math.min(MAX_INLINE_HINT_WIDTH,
+        math.max(120, math.floor((right_bound - left_bound) * 0.48)))
     local safe_top = 4
     local safe_bottom = screen_h - 4
     local items = {}
@@ -635,7 +687,11 @@ function WordWise:paintHints(bb, x, y)
         local marker_y = below and below_marker_y or above_marker_y
         local text_top = below and below_top or above_top
         local text_bottom = baseline + descent
-        local band = h.box.y + (below and h.box.h + 0.5 or 0)
+        -- Word boxes on a single rendered line can differ by a few pixels due
+        -- to glyph ascent/descent. Quantize the band so collision detection
+        -- treats them as one row instead of allowing overlap.
+        local band_size = math.max(12, h.box.h * 0.5)
+        local band = math.floor((h.box.y + (below and h.box.h or 0)) / band_size + 0.5)
 
         items[#items + 1] = {
             h = h, text = display_text, full_text = full_text,
@@ -647,29 +703,51 @@ function WordWise:paintHints(bb, x, y)
         }
     end
 
-    -- De-overlap each above/below band, preferring harder/rarer CEFR entries.
+    -- De-overlap each above/below band. We first try the word-centered
+    -- position, then search the gaps around already placed hints, choosing the
+    -- legal position closest to the word. Only a hint that cannot fit anywhere
+    -- in the line is dropped.
     table.sort(items, function(a, b)
         if a.band ~= b.band then return a.band < b.band end
         if a.cefr_rank ~= b.cefr_rank then return a.cefr_rank > b.cefr_rank end
         return a.x0 < b.x0
     end)
     local placed = {}
+    local function overlaps(x0, x1, list)
+        for _, iv in ipairs(list or {}) do
+            if x0 < iv[2] + GLOSS_HGAP and x1 + GLOSS_HGAP > iv[1] then return true end
+        end
+        return false
+    end
+    local function find_slot(it, list)
+        local preferred = it.x0
+        local candidates = { preferred, left_bound, right_bound - (it.x1 - it.x0) }
+        for _, iv in ipairs(list or {}) do
+            candidates[#candidates + 1] = iv[2] + GLOSS_HGAP
+            candidates[#candidates + 1] = iv[1] - GLOSS_HGAP - (it.x1 - it.x0)
+        end
+        local best, best_distance
+        for _, candidate in ipairs(candidates) do
+            local width = it.x1 - it.x0
+            local x0 = math.max(left_bound, math.min(candidate, right_bound - width))
+            local x1 = x0 + width
+            if x1 <= right_bound and not overlaps(x0, x1, list) then
+                local distance = math.abs(x0 - preferred)
+                if not best_distance or distance < best_distance then
+                    best, best_distance = x0, distance
+                end
+            end
+        end
+        return best
+    end
     for _, it in ipairs(items) do
         if it.text_top >= safe_top and it.text_bottom <= safe_bottom then
             local list = placed[it.band]
-            local fits = true
-            if list then
-                for _, iv in ipairs(list) do
-                    if it.x0 < iv[2] + GLOSS_HGAP and it.x1 + GLOSS_HGAP > iv[1] then
-                        fits = false
-                        break
-                    end
-                end
-            else
-                list = {}
-                placed[it.band] = list
-            end
-            if fits then
+            if not list then list = {}; placed[it.band] = list end
+            local x0 = find_slot(it, list)
+            if x0 then
+                local width = it.x1 - it.x0
+                it.x0, it.x1 = x0, x0 + width
                 list[#list + 1] = { it.x0, it.x1 }
                 local hit_top = math.min(it.text_top, it.h.box.y) - 5
                 local hit_bottom = math.max(it.text_bottom, it.h.box.y + it.h.box.h) + 5
@@ -682,8 +760,7 @@ function WordWise:paintHints(bb, x, y)
                 RenderText:renderUtf8Text(bb, it.x0, it.baseline, self.gloss_face,
                     it.text, true, false, color)
                 if it.below then
-                    -- Below-word hints use an upward-pointing marker. The
-                    -- horizontal rule is still optional and remains compact.
+                    -- Below-word hints use an upward-pointing marker.
                     local half = CARET_DEPTH
                     local cx = math.max(it.x0 + half, math.min(it.word_cx, it.x1 - half))
                     if show_underline then
@@ -724,6 +801,13 @@ end
 function WordWise:setShowUnderline(on)
     G_reader_settings:saveSetting("wordwise_show_underline", on)
     self:refresh()
+end
+
+function WordWise:showKnownWordsPath()
+    self:getKnownWords()
+    UIManager:show(InfoMessage:new{
+        text = self:tr("known_words_file", KNOWN_WORDS_PATH),
+    })
 end
 
 function WordWise:setEnabled(on)
@@ -792,6 +876,13 @@ function WordWise:getSubMenu()
             checked_func = function() return self:getShowUnderline() end,
             enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
             callback = function() self:setShowUnderline(not self:getShowUnderline()) end,
+        },
+        {
+            text_func = function()
+                return self:tr("known_words_menu")
+            end,
+            enabled_func = function() return self:isSupportedDocument() end,
+            callback = function() self:showKnownWordsPath() end,
         },
         {
             text_func = function()

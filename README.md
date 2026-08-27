@@ -29,7 +29,7 @@ Inline hints are bounded to a compact width. When a definition is wider than tha
 
 Tap a visible hint to open the Word Wise action dialog. The sense rows are left-aligned and show the CEFR/POS classification in a compact bold row. The three action controls are placed in one horizontal row to reduce popup height. Selecting a sense saves it for that lemma and repaints the current page so the preferred gloss is shown on future occurrences.
 
-The action row provides **Know** or **Show**, **Dictionary**, and **Cancel**. **Know/Show** suppresses or restores only the selected sense, while **Dictionary** invokes KOReader’s standard dictionary lookup for the underlying word. A tap outside a hint is deliberately not consumed, so Android page-turn gestures continue to work normally.
+The action row provides **Know** or **Show**, **Dictionary**, and **Cancel**. **Know/Show** suppresses or restores the entire lemma: pressing **Know** hides every sense and every inflected occurrence of that word. **Dictionary** invokes KOReader’s standard dictionary lookup for the underlying word. A tap outside a hint is deliberately not consumed, so Android page-turn gestures continue to work normally.
 
 ## Database schema
 
@@ -50,7 +50,7 @@ CREATE INDEX entries_word_idx ON entries(word COLLATE NOCASE);
 CREATE INDEX entries_cefr_idx ON entries(cefr_level);
 ```
 
-A user database placed at `<koreader data dir>/wordwise/wordwise.db` overrides the bundled database. The runtime also accepts the upstream `difficulty` schema as a temporary compatibility path and maps its five bands approximately to CEFR. New releases should use the CEFR schema and should not rely on the compatibility mapping for authoritative CEFR classification.
+A user database placed at `<koreader data dir>/wordwise/wordwise.db` overrides the bundled database. User choices are stored separately in `<koreader data dir>/wordwise/known_words.lua` and `<koreader data dir>/wordwise/state.lua`, outside the plugin folder. Updating or replacing `wordwise.koplugin` therefore does not remove the known-word list. The Word Wise menu includes **Known words file** to show the exact path. The runtime also accepts the upstream `difficulty` schema as a temporary compatibility path and maps its five bands approximately to CEFR.
 
 ## Building the dictionary
 
@@ -84,4 +84,4 @@ Review the upstream repository’s licensing status before publishing a redistri
 
 The CEFR migration does not alter the page traversal, overlay painting, reflow hooks, line-spacing adjustment, or screen-box anchoring. Those are the stability-critical parts of the plugin. The migration changes database lookup and menu filtering only.
 
-The main Android-specific risk is interaction: the hint tap zone is full-screen for priority purposes but consumes a gesture only when its coordinate intersects a rendered hint or its compact text box. This follows KOReader’s existing highlight interaction pattern and avoids stealing ordinary page turns. Layout also checks the top and bottom safe insets before painting, and the inline definition is truncated by measured glyph width rather than character count.
+The main Android-specific risk is interaction: the hint tap zone is full-screen for priority purposes but consumes a gesture only when its coordinate intersects a rendered hint or its compact text box. This follows KOReader’s existing highlight interaction pattern and avoids stealing ordinary page turns. Layout checks the top and bottom safe insets before painting, truncates by measured glyph width rather than character count, and searches available horizontal gaps before dropping a colliding hint.

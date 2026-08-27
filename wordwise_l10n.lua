@@ -150,6 +150,8 @@ return {
         dictionary_short = "Dictionary",
         know_short = "Know",
         show_short = "Show",
+        known_words_menu = "Known words file",
+        known_words_file = "Known words are saved in:\n%1",
         cancel = "Cancel",
     },
     eo = {
