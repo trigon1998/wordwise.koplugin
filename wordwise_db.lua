@@ -71,6 +71,12 @@ end
 local WordWiseDB = {}
 WordWiseDB.__index = WordWiseDB
 
+-- Page turns can expose thousands of unique surface forms over a long session.
+-- Keep the fast in-memory lookup cache bounded; the SQLite database remains the
+-- source of truth. FIFO is intentional here: it avoids touching table metadata
+-- on every cache hit while still placing a hard ceiling on retained results.
+local CACHE_LIMIT = 1024
+
 function WordWiseDB.open(path)
     local ok, conn = pcall(SQ3.open, path, "ro")
     if not ok or not conn then
@@ -79,18 +85,30 @@ function WordWiseDB.open(path)
     end
 
     local columns = {}
+    local schema_stmt
     local ok_schema = pcall(function()
-        for row in conn:prepare("PRAGMA table_info(entries);"):rows() do
+        schema_stmt = conn:prepare("PRAGMA table_info(entries);")
+        for row in schema_stmt:rows() do
             columns[row[2]] = true
         end
+        schema_stmt:close()
+        schema_stmt = nil
     end)
+    if schema_stmt then pcall(function() schema_stmt:close() end) end
     if not ok_schema or not columns.word or not columns.short_def then
         logger.warn("WordWiseDB: unsupported entries schema", path)
         pcall(function() conn:close() end)
         return nil
     end
 
-    local self = setmetatable({ conn = conn, cache = {}, legacy = not columns.cefr_level }, WordWiseDB)
+    local self = setmetatable({
+        conn = conn,
+        cache = {},
+        cache_order = {},
+        cache_head = 1,
+        cache_count = 0,
+        legacy = not columns.cefr_level,
+    }, WordWiseDB)
     if columns.cefr_level then
         self.query_sql = "SELECT rowid, word, short_def, cefr_level, pos, sense_key, source FROM entries WHERE word = ?1 COLLATE NOCASE ORDER BY rowid;"
     elseif columns.difficulty then
@@ -154,6 +172,31 @@ function WordWiseDB:_query(key)
 end
 
 -- Return every usable sense for a surface word, or nil.
+function WordWiseDB:_cacheInsert(surface, value)
+    self.cache[surface] = value
+    self.cache_order[#self.cache_order + 1] = surface
+    self.cache_count = self.cache_count + 1
+    while self.cache_count > CACHE_LIMIT do
+        local old = self.cache_order[self.cache_head]
+        -- Leave the consumed slot intact until periodic compaction; holes make
+        -- Lua's length operator undefined for array-like tables.
+        self.cache_head = self.cache_head + 1
+        if old and self.cache[old] ~= nil then
+            self.cache[old] = nil
+            self.cache_count = self.cache_count - 1
+        end
+    end
+    -- Compact the queue occasionally so eviction metadata itself cannot grow.
+    if self.cache_head > CACHE_LIMIT and self.cache_head > (#self.cache_order / 2) then
+        local compacted = {}
+        for i = self.cache_head, #self.cache_order do
+            compacted[#compacted + 1] = self.cache_order[i]
+        end
+        self.cache_order = compacted
+        self.cache_head = 1
+    end
+end
+
 function WordWiseDB:lookupAll(word)
     if not word or word == "" then return nil end
     local surface = word:lower()
@@ -167,7 +210,7 @@ function WordWiseDB:lookupAll(word)
         end
         if #result > 0 then break end
     end
-    self.cache[surface] = #result > 0 and result or false
+    self:_cacheInsert(surface, #result > 0 and result or false)
     return #result > 0 and result or nil
 end
 
@@ -180,6 +223,8 @@ function WordWiseDB:close()
     if self.stmt then pcall(function() self.stmt:close() end) end
     if self.conn then pcall(function() self.conn:close() end) end
     self.stmt, self.conn = nil, nil
+    self.cache, self.cache_order = {}, {}
+    self.cache_head, self.cache_count = 1, 0
 end
 
 return WordWiseDB

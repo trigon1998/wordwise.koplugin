@@ -217,6 +217,8 @@ end
 
 function WordWise:init()
     self:cleanupOTABackup()
+    self._lifecycle_generation = (self._lifecycle_generation or 0) + 1
+    self._hint_refresh_scheduled = false
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
     -- infofont is NotoSans (proportional), suitable for compact glosses.
@@ -360,29 +362,56 @@ function WordWise:setLineSpacing(on)
     self.ui:handleEvent(Event:new("UpdatePos"))
 end
 
+function WordWise:scheduleHintRefresh()
+    if self._hint_refresh_scheduled then return end
+    self._hint_refresh_scheduled = true
+    local generation = self._lifecycle_generation
+    UIManager:nextTick(function()
+        self._hint_refresh_scheduled = false
+        -- A document may have closed before nextTick runs. Do not retain or
+        -- recompute stale page objects after the reader moved on.
+        if generation ~= self._lifecycle_generation then return end
+        if self:isEnabled() and self:isSupportedDocument() and self:hasDB() then
+            self:computePageHints()
+            UIManager:setDirty("all", "ui")
+        end
+    end)
+end
+
 function WordWise:onReaderReady()
     self:setupTouchZones()
     if not self:isSupportedDocument() then return end
     if self:isEnabled() and self:hasDB() then
-        -- The book was left at the raised spacing (persisted per-book) when it
-        -- was turned on, so it reopens laid out correctly; just paint the hints.
-        UIManager:nextTick(function() self:refresh() end)
+        -- Coalesce the initial reader event with any immediate PosUpdate or
+        -- rerender event emitted while the document settles.
+        self:scheduleHintRefresh()
     end
 end
 
 -- Close the dictionary DB when the document closes so the SQLite connection and
 -- prepared statement are released deterministically (rather than at GC).
 function WordWise:onCloseDocument()
+    self._lifecycle_generation = (self._lifecycle_generation or 0) + 1
+    self._hint_refresh_scheduled = false
+    if self._hint_dialog then
+        UIManager:close(self._hint_dialog)
+        self._hint_dialog = nil
+    end
     self:flushState()
     if self.db then
         self.db:close()
         self.db = nil
     end
+    self._db_path = nil
+    self.hints = {}
+    self._gloss_metrics = nil
 end
 
--- Recompute per page turn / re-render.
-function WordWise:onPosUpdate() self:computePageHints() end
-function WordWise:onPageUpdate() self:computePageHints() end
+-- Recompute once on the next UI tick. KOReader may emit PosUpdate, PageUpdate,
+-- and a rerender event for one page turn; coalescing prevents duplicate word
+-- walks and duplicate screen-box allocations.
+function WordWise:onPosUpdate() self:scheduleHintRefresh() end
+function WordWise:onPageUpdate() self:scheduleHintRefresh() end
 
 -- A KOReader "profile" switch -- or any font / margin / line-height / style
 -- change -- re-renders the document, moving every word to a new position. Our
@@ -397,7 +426,7 @@ function WordWise:onPageUpdate() self:computePageHints() end
 -- geometry.
 function WordWise:onDocumentRerendered()
     if not (self:isEnabled() and self:isSupportedDocument()) then return end
-    UIManager:nextTick(function() self:refresh() end)
+    self:scheduleHintRefresh()
 end
 WordWise.onDocumentPartiallyRerendered = WordWise.onDocumentRerendered
 
@@ -495,6 +524,7 @@ end
 
 function WordWise:showHintActions(hint)
     local buttons = {}
+    local close_dialog
     local current_entry = hint.entry
     local current_key = current_entry and current_entry.sense_key
     for _, entry in ipairs(hint.senses or {}) do
@@ -517,13 +547,17 @@ function WordWise:showHintActions(hint)
                 text_font_size = 17,
                 callback = function()
                     self:setSelectedSense(entry)
-                    UIManager:close(self._hint_dialog)
+                    close_dialog()
                 end,
             }})
         end
     end
-    local function close_dialog()
-        if self._hint_dialog then UIManager:close(self._hint_dialog) end
+    close_dialog = function()
+        if self._hint_dialog then
+            local dialog = self._hint_dialog
+            self._hint_dialog = nil
+            UIManager:close(dialog)
+        end
     end
     table.insert(buttons, {
         {

@@ -54,3 +54,13 @@ assert 'releases/latest' in ota and 'wordwise.koplugin.zip' in ota
 assert 'https://' in ota and 'safe_archive_path' in ota
 assert 'known_words.lua' in (ROOT / 'DEVELOPMENT.md').read_text()
 print('ota_contract_guards_ok')
+db_lua = (ROOT / 'wordwise_db.lua').read_text()
+assert 'local CACHE_LIMIT = 1024' in db_lua
+assert 'function WordWiseDB:_cacheInsert' in db_lua
+assert 'self.cache, self.cache_order = {}, {}' in db_lua
+assert 'function WordWise:scheduleHintRefresh()' in main
+assert 'self._hint_refresh_scheduled' in main
+assert 'self._lifecycle_generation' in main
+assert 'self._hint_dialog = nil' in main
+assert 'self._db_path = nil' in main
+print('memory_and_refresh_guards_ok')

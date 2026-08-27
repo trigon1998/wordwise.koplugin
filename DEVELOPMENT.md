@@ -240,7 +240,15 @@ python3 tests/test_cefr.py
 python3 -m py_compile tools/build_cefr_dict.py tools/build_cefr_wordnet_dict.py
 ```
 
-The tests currently cover Lua syntax, Python syntax, CEFR schema, all six CEFR levels, multi-sense coverage, absence of Kindle/Amazon runtime references, durable known-word storage, selected-sense filtering, fixed popup rows, truncation, below-word fallback, and collision-layout guards.
+The tests currently cover Lua syntax, Python syntax, CEFR schema, all six CEFR levels, multi-sense coverage, absence of Kindle/Amazon runtime references, durable known-word storage, selected-sense filtering, fixed popup rows, truncation, below-word fallback, collision-layout guards, bounded dictionary caching, and refresh coalescing.
+
+## 10.1 Performance and memory-safety rules
+
+The dictionary connection and prepared statement are opened once per plugin instance and closed in `onCloseDocument`. Lookup results are cached in memory for speed, but the cache is capped at 1,024 surface forms with bounded FIFO eviction. This prevents a long reading session across many unique words from retaining an unbounded number of sense tables. The cache is also cleared when the database closes.
+
+Page hints are stored only for the current visible page and are replaced at the start of every recomputation. Page-update, position-update, and rerender notifications are coalesced into one `nextTick` refresh. A lifecycle generation guard makes an already queued callback harmless if the document closes before the callback executes. The close hook clears hints, closes any open Word Wise dialog, flushes user state, closes SQLite resources, and invalidates the database path.
+
+These controls remove the main source-level unbounded-retention and duplicate-work risks, but they cannot prove that every Android device remains stable under sustained paging. A device stress test should collect KOReader's log and memory information while turning pages continuously for at least 10–15 minutes, with a large book, several thousand unique words, and Word Wise enabled. Watch for a monotonic resident-memory increase after garbage-collection cycles, repeated SQLite errors, stale overlays after document close, and touch or page-turn latency.
 
 Static checks are necessary but not sufficient. Before release, install the plugin on an Android device and test at least:
 
