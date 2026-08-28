@@ -25,6 +25,7 @@ local ACTION_BUTTON_HEIGHT = Screen:scaleBySize(48)
 local SenseRow = InputContainer:extend{
     width = 0,
     height = SENSE_ROW_HEIGHT,
+    font_size = nil,
     entry = nil,
     on_select = nil,
 }
@@ -33,9 +34,10 @@ function SenseRow:init()
     local pad_h = Screen:scaleBySize(12)
     local pad_v = Screen:scaleBySize(4)
     local inner_width = math.max(Screen:scaleBySize(40), self.width - 2 * pad_h)
-    local cefr_face = Font:getFace("infofont", Screen:scaleBySize(16))
-    local regular_face = Font:getFace("infofont", Screen:scaleBySize(16))
-    local italic_face = Font:getFace("NotoSans-Italic.ttf", Screen:scaleBySize(16))
+    local font_size = self.font_size or Screen:scaleBySize(16)
+    local cefr_face = Font:getFace("infofont", font_size)
+    local regular_face = Font:getFace("infofont", font_size)
+    local italic_face = Font:getFace("NotoSans-Italic.ttf", font_size)
     local cefr = TextWidget:new{
         text = self.entry.cefr_level or "",
         face = cefr_face,
@@ -107,8 +109,18 @@ function HintDialog:init()
 
     self.width = math.floor(math.min(Screen:getWidth(), Screen:getHeight()) * self.width_factor)
     self.inner_width = self.width - 2 * Size.padding.button
-    self.regular_face = Font:getFace("infofont", Screen:scaleBySize(16))
-    self.title_face = Font:getFace("infofont", Screen:scaleBySize(18))
+    local document_font_size
+    local document = self.owner.ui and self.owner.ui.document
+    if document and document.getFontSize then
+        local ok_font, value = pcall(function() return document:getFontSize() end)
+        if ok_font and type(value) == "number" and value > 0 then
+            document_font_size = math.floor(value + 0.5)
+        end
+    end
+    self.popup_font_size = document_font_size or self.owner:getGlossFontSize()
+    self.row_height = math.max(SENSE_ROW_HEIGHT, math.floor(self.popup_font_size * 2.5))
+    self.regular_face = Font:getFace("infofont", self.popup_font_size)
+    self.title_face = Font:getFace("infofont", self.popup_font_size)
     self.current_entry = self.hint.entry
     self.alternatives = {}
     local current_key = self.current_entry and self.current_entry.sense_key
@@ -168,6 +180,7 @@ function HintDialog:_makeContent()
         table.insert(content, SenseRow:new{
             width = self.inner_width,
             height = self.row_height,
+            font_size = self.popup_font_size,
             entry = entry,
             on_select = function(selected)
                 self.owner:setSelectedSense(selected)
@@ -204,12 +217,14 @@ function HintDialog:_makePageControls()
                 text = self.arrow_prev,
                 width = Screen:scaleBySize(52),
                 height = PAGE_BUTTON_HEIGHT,
+                font_size = self.popup_font_size,
                 enabled = self.page > 1,
                 callback = function() self:setPage(self.page - 1) end,
             },
             {
                 text = self:pageLabel(),
                 height = PAGE_BUTTON_HEIGHT,
+                font_size = self.popup_font_size,
                 enabled = false,
                 callback = function() end,
             },
@@ -217,6 +232,7 @@ function HintDialog:_makePageControls()
                 text = self.arrow_next,
                 width = Screen:scaleBySize(52),
                 height = PAGE_BUTTON_HEIGHT,
+                font_size = self.popup_font_size,
                 enabled = self.page < self.page_count,
                 callback = function() self:setPage(self.page + 1) end,
             },
@@ -245,17 +261,20 @@ function HintDialog:_makeActions()
             {
                 text = self.owner:isWordKnown(self.current_entry) and self.owner:tr("show_short") or self.owner:tr("know_short"),
                 height = ACTION_BUTTON_HEIGHT,
+                font_size = self.popup_font_size,
                 callback = known,
             },
             {
                 text = self.owner:tr("dictionary_short"),
                 height = ACTION_BUTTON_HEIGHT,
+                font_size = self.popup_font_size,
                 callback = dictionary,
             },
             {
                 text = self.owner:tr("cancel"),
                 id = "close",
                 height = ACTION_BUTTON_HEIGHT,
+                font_size = self.popup_font_size,
                 callback = function() self:closeDialog() end,
             },
         }},

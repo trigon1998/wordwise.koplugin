@@ -22,7 +22,6 @@ local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
 local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
-local TextViewer = require("ui/widget/textviewer")
 local ConfirmBox = require("ui/widget/confirmbox")
 local RenderText = require("ui/rendertext")
 local SpinWidget = require("ui/widget/spinwidget")
@@ -810,124 +809,6 @@ function WordWise:setShowUnderline(on)
     self:refresh()
 end
 
-local function countTableEntries(value)
-    if type(value) ~= "table" then return 0 end
-    local count = 0
-    for _ in pairs(value) do count = count + 1 end
-    return count
-end
-
-function WordWise:getDiagnosticsText()
-    local screen_w, screen_h = Screen:getWidth(), Screen:getHeight()
-    local db = self.db
-    local popup = self._hint_dialog
-    local frame = popup and popup.dialog_frame
-    local popup_dimen = frame and frame.dimen
-    local state = self.selected_senses or {}
-    local known = self.known_words or {}
-    local db_path = self._db_path
-    local db_name = db_path and db_path:match("([^/\\\\]+)$") or "unavailable"
-    local ko_version = rawget(_G, "VERSION") or rawget(_G, "KOReaderVersion") or "unavailable"
-    local current_page = "unavailable"
-    if self.ui and self.ui.document and self.ui.document.getCurrentPage then
-        local ok_page, value = pcall(function() return self.ui.document:getCurrentPage() end)
-        if ok_page and value ~= nil then current_page = value end
-    end
-    local popup_page = popup and popup.page or "closed"
-    local popup_pages = popup and popup.page_count or "closed"
-    local popup_alternatives = popup and # (popup.alternatives or {}) or "closed"
-    local lines = {
-        "Word Wise Developer Diagnostics",
-        "Generated: " .. os.date("!%Y-%m-%dT%H:%M:%SZ"),
-        "",
-        "[plugin]",
-        "version=" .. tostring(PLUGIN_VERSION),
-        "repository=https://github.com/trigon1998/wordwise.koplugin",
-        "",
-        "[runtime]",
-        "koreader_version=" .. tostring(ko_version),
-        "lua_version=" .. tostring(_VERSION or "unavailable"),
-        "platform=" .. tostring(Device.platform or "unavailable"),
-        "touch_device=" .. tostring(Device:isTouchDevice()),
-        "has_keys=" .. tostring(Device:hasKeys()),
-        "screen_width=" .. tostring(screen_w),
-        "screen_height=" .. tostring(screen_h),
-        "",
-        "[document]",
-        "supported=" .. tostring(self:isSupportedDocument()),
-        "wordwise_enabled=" .. tostring(self:isEnabled()),
-        "rolling=" .. tostring(self.ui and self.ui.rolling ~= nil),
-        "paging=" .. tostring(self.ui and self.ui.paging or false),
-        "current_page=" .. tostring(current_page),
-        "",
-        "[configuration]",
-        "cefr_threshold=" .. tostring(self:getCEFRLevel()),
-        "cefr_rank=" .. tostring(self:getCEFRRank()),
-        "gloss_font_size=" .. tostring(self:getGlossFontSize()),
-        "show_underline=" .. tostring(self:getShowUnderline()),
-        "",
-        "[database]",
-        "loaded=" .. tostring(db ~= nil and db ~= false),
-        "source_file=" .. db_name,
-        "schema_mode=" .. (db and (db.legacy and "legacy_difficulty" or "cefr") or "unavailable"),
-        "cache_count=" .. tostring(db and db.cache_count or 0),
-        "cache_limit=" .. tostring(db and 1024 or "unavailable"),
-        "",
-        "[popup]",
-        "open=" .. tostring(popup ~= nil),
-        "page=" .. tostring(popup_page),
-        "page_count=" .. tostring(popup_pages),
-        "alternative_count=" .. tostring(popup_alternatives),
-        "page_size=" .. tostring(popup and popup.page_size or "closed"),
-        "row_height=" .. tostring(popup and popup.row_height or "closed"),
-        "dialog_width=" .. tostring(popup_dimen and popup_dimen.w or "closed"),
-        "dialog_height=" .. tostring(popup_dimen and popup_dimen.h or "closed"),
-        "gesture_mode=static_popup",
-        "popup_alpha=1.0",
-        "movable_behavior=disabled",
-        "",
-        "[state]",
-        "known_words_path=<KOReader data directory>/wordwise/known_words.lua",
-        "state_path=<KOReader data directory>/wordwise/state.lua",
-        "known_word_count=" .. tostring(countTableEntries(known)),
-        "selected_sense_count=" .. tostring(countTableEntries(state)),
-        "",
-        "[lifecycle]",
-        "generation=" .. tostring(self._lifecycle_generation or 0),
-        "hint_refresh_scheduled=" .. tostring(self._hint_refresh_scheduled == true),
-        "current_hint_count=" .. tostring(#(self.hints or {})),
-        "dialog_reference=" .. tostring(popup ~= nil),
-        "db_path_resolved=" .. tostring(self._db_path ~= nil),
-        "",
-        "[ota]",
-        "installed_version=" .. tostring(PLUGIN_VERSION),
-        "status_message_active=" .. tostring(self._ota_status_message ~= nil),
-        "backup_cleanup_on_init=true",
-        "",
-        "[privacy]",
-        "book_content=not included",
-        "known_word_values=not included",
-        "credentials=not included",
-    }
-    return table.concat(lines, "\\n")
-end
-
-function WordWise:showDeveloperDiagnostics()
-    local viewer = TextViewer:new{
-        title = self:tr("developer_diagnostics"),
-        text = self:getDiagnosticsText(),
-        text_type = "code",
-        width = math.floor(Screen:getWidth() * 0.94),
-        height = math.floor(Screen:getHeight() * 0.88),
-        add_default_buttons = true,
-        show_menu = true,
-        alignment = "left",
-        para_direction_rtl = false,
-        auto_para_direction = false,
-    }
-    UIManager:show(viewer)
-end
-
 function WordWise:showKnownWordsPath()
     self:getKnownWords()
     UIManager:show(InfoMessage:new{
@@ -1074,10 +955,6 @@ function WordWise:getSubMenu()
             end,
             enabled_func = function() return self:isSupportedDocument() end,
             callback = function() self:showKnownWordsPath() end,
-        },
-        {
-            text = self:tr("developer_diagnostics"),
-            callback = function() self:showDeveloperDiagnostics() end,
         },
         {
             text = self:tr("check_update"),

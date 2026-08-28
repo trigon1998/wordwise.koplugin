@@ -208,7 +208,7 @@ Mỗi row là `SenseRow`, có chiều cao bằng nhau và là một `InputContai
 [A1] (noun): regular definition
 ```
 
-CEFR dùng `bold = true`, POS dùng face `NotoSans-Italic.ttf` và nằm trong ngoặc đơn, còn definition dùng `infofont` regular. Không dùng một Button label duy nhất cho row vì Button chuẩn không biểu diễn được đúng các face hỗn hợp này.
+CEFR dùng `bold = true`, POS dùng face `NotoSans-Italic.ttf` và nằm trong ngoặc đơn, còn definition dùng `infofont` regular. Không dùng một Button label duy nhất cho row vì Button chuẩn không biểu diễn được đúng các face hỗn hợp này. Popup lấy `document:getFontSize()` làm cỡ chữ chung cho title, sense rows, page controls và action buttons; chỉ dùng cỡ hint hiện tại làm fallback khi document API không có sẵn.
 
 Khi chuyển trang, dialog gọi `self:free()` để giải phóng đệ quy cây widget hiện tại, xóa root references rồi build lại content, page controls và root container. Đây là pattern tương tự reinit của KOReader `ButtonDialog`/`ConfirmBox` và tránh orphaned TextWidget, SenseRow, ButtonTable hoặc tài nguyên native.
 
@@ -256,14 +256,6 @@ selected_senses = { ... }
 ```
 
 Menu **Known words file** phải tiếp tục hiển thị path thực tế trên thiết bị để hỗ trợ backup và troubleshooting.
-
-## 10.1 Developer Diagnostics
-
-Menu **Developer diagnostics** trong phần Word Wise settings mở một `TextViewer` với báo cáo plain-text có thể chọn và copy. Báo cáo được tạo tại thời điểm mở, không tạo lookup mới, không chạy lại toàn bộ trang và không gửi network request.
-
-Diagnostics bao gồm plugin version/repository, Lua/KOReader runtime nếu API có sẵn, screen metrics, document support/enabled state, CEFR và font configuration, database source/schema/cache, popup page geometry và static gesture mode, state counts/path placeholders, lifecycle flags và OTA status. API tùy chọn được bảo vệ bằng capability check hoặc `pcall`; giá trị không có được ghi là `unavailable`.
-
-Báo cáo không chứa book content, gloss dump, known-word values, password, cookie, access token hoặc credential. Khi cần report lỗi, người dùng nên gửi toàn bộ diagnostics cùng KOReader version, Android device, bước tái hiện và log liên quan.
 
 ## 11. Hiệu năng và memory safety
 

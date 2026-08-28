@@ -65,15 +65,18 @@ assert 'ges = "hold_pan"' not in dialog
 assert 'ges = "pan"' not in dialog
 assert 'ges = "swipe"' not in dialog
 print('popup_pagination_and_mixed_style_guards_ok')
-assert 'local TextViewer = require("ui/widget/textviewer")' in main
-assert 'function WordWise:getDiagnosticsText()' in main
-assert 'function WordWise:showDeveloperDiagnostics()' in main
-assert 'developer_diagnostics' in main
-assert 'gesture_mode=static_popup' in main
-assert 'popup_alpha=1.0' in main
-assert 'movable_behavior=disabled' in main
-assert 'credentials=not included' in main
-print('developer_diagnostics_guards_ok')
+assert 'document:getFontSize()' in dialog
+assert 'self.popup_font_size' in dialog
+assert 'font_size = self.popup_font_size' in dialog
+assert 'title_face = Font:getFace("infofont", self.popup_font_size)' in dialog
+print('popup_document_font_size_guards_ok')
+assert 'getDiagnosticsText' not in main
+assert 'showDeveloperDiagnostics' not in main
+assert 'TextViewer' not in main
+assert 'developer_diagnostics' not in main
+assert 'Developer diagnostics' not in (ROOT / 'README.md').read_text()
+assert 'Developer Diagnostics' not in (ROOT / 'DEVELOPMENT.md').read_text()
+print('diagnostics_removed_guards_ok')
 ota = (ROOT / 'wordwise_ota.lua').read_text()
 assert 'trigon1998' in ota and 'wordwise.koplugin' in ota
 assert 'releases/latest' in ota and 'wordwise.koplugin.zip' in ota
