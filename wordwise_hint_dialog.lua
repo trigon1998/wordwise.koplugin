@@ -34,10 +34,9 @@ function SenseRow:init()
     local pad_h = Screen:scaleBySize(12)
     local pad_v = Screen:scaleBySize(4)
     local inner_width = math.max(Screen:scaleBySize(40), self.width - 2 * pad_h)
-    local font_size = self.font_size or Screen:scaleBySize(16)
-    local cefr_face = Font:getFace("infofont", font_size)
-    local regular_face = Font:getFace("infofont", font_size)
-    local italic_face = Font:getFace("NotoSans-Italic.ttf", font_size)
+    local cefr_face = Font:getFace("infofont")
+    local regular_face = Font:getFace("infofont")
+    local italic_face = Font:getFace("NotoSans-Italic.ttf")
     local cefr = TextWidget:new{
         text = self.entry.cefr_level or "",
         face = cefr_face,
@@ -109,18 +108,11 @@ function HintDialog:init()
 
     self.width = math.floor(math.min(Screen:getWidth(), Screen:getHeight()) * self.width_factor)
     self.inner_width = self.width - 2 * Size.padding.button
-    local document_font_size
-    local document = self.owner.ui and self.owner.ui.document
-    if document and document.getFontSize then
-        local ok_font, value = pcall(function() return document:getFontSize() end)
-        if ok_font and type(value) == "number" and value > 0 then
-            document_font_size = math.floor(value + 0.5)
-        end
-    end
-    self.popup_font_size = document_font_size or self.owner:getGlossFontSize()
-    self.row_height = math.max(SENSE_ROW_HEIGHT, math.floor(self.popup_font_size * 2.5))
-    self.regular_face = Font:getFace("infofont", self.popup_font_size)
-    self.title_face = Font:getFace("infofont", self.popup_font_size)
+    self.system_face = Font:getFace("infofont")
+    self.popup_font_size = self.system_face.orig_size or self.system_face.size or Screen:scaleBySize(16)
+    self.row_height = SENSE_ROW_HEIGHT
+    self.regular_face = self.system_face
+    self.title_face = self.system_face
     self.current_entry = self.hint.entry
     self.alternatives = {}
     local current_key = self.current_entry and self.current_entry.sense_key
@@ -215,24 +207,24 @@ function HintDialog:_makePageControls()
         buttons = {{
             {
                 text = self.arrow_prev,
+                font_face = "infofont",
                 width = Screen:scaleBySize(52),
                 height = PAGE_BUTTON_HEIGHT,
-                font_size = self.popup_font_size,
                 enabled = self.page > 1,
                 callback = function() self:setPage(self.page - 1) end,
             },
             {
                 text = self:pageLabel(),
+                font_face = "infofont",
                 height = PAGE_BUTTON_HEIGHT,
-                font_size = self.popup_font_size,
                 enabled = false,
                 callback = function() end,
             },
             {
                 text = self.arrow_next,
+                font_face = "infofont",
                 width = Screen:scaleBySize(52),
                 height = PAGE_BUTTON_HEIGHT,
-                font_size = self.popup_font_size,
                 enabled = self.page < self.page_count,
                 callback = function() self:setPage(self.page + 1) end,
             },
@@ -260,21 +252,21 @@ function HintDialog:_makeActions()
         buttons = {{
             {
                 text = self.owner:isWordKnown(self.current_entry) and self.owner:tr("show_short") or self.owner:tr("know_short"),
+                font_face = "infofont",
                 height = ACTION_BUTTON_HEIGHT,
-                font_size = self.popup_font_size,
                 callback = known,
             },
             {
                 text = self.owner:tr("dictionary_short"),
+                font_face = "infofont",
                 height = ACTION_BUTTON_HEIGHT,
-                font_size = self.popup_font_size,
                 callback = dictionary,
             },
             {
                 text = self.owner:tr("cancel"),
+                font_face = "infofont",
                 id = "close",
                 height = ACTION_BUTTON_HEIGHT,
-                font_size = self.popup_font_size,
                 callback = function() self:closeDialog() end,
             },
         }},

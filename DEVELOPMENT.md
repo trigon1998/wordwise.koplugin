@@ -208,7 +208,7 @@ Mỗi row là `SenseRow`, có chiều cao bằng nhau và là một `InputContai
 [A1] (noun): regular definition
 ```
 
-CEFR dùng `bold = true`, POS dùng face `NotoSans-Italic.ttf` và nằm trong ngoặc đơn, còn definition dùng `infofont` regular. Không dùng một Button label duy nhất cho row vì Button chuẩn không biểu diễn được đúng các face hỗn hợp này. Popup lấy `document:getFontSize()` làm cỡ chữ chung cho title, sense rows, page controls và action buttons; chỉ dùng cỡ hint hiện tại làm fallback khi document API không có sẵn.
+CEFR dùng `bold = true`, POS dùng face `NotoSans-Italic.ttf` và nằm trong ngoặc đơn, còn definition dùng `infofont` regular. Không dùng một Button label duy nhất cho row vì Button chuẩn không biểu diễn được đúng các face hỗn hợp này. Popup dùng face `infofont` mặc định của KOReader cho title, sense rows, page controls và action buttons; không lấy cỡ chữ document làm kích thước popup.
 
 Khi chuyển trang, dialog gọi `self:free()` để giải phóng đệ quy cây widget hiện tại, xóa root references rồi build lại content, page controls và root container. Đây là pattern tương tự reinit của KOReader `ButtonDialog`/`ConfirmBox` và tránh orphaned TextWidget, SenseRow, ButtonTable hoặc tài nguyên native.
 

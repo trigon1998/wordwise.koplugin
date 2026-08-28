@@ -65,10 +65,10 @@ assert 'ges = "hold_pan"' not in dialog
 assert 'ges = "pan"' not in dialog
 assert 'ges = "swipe"' not in dialog
 print('popup_pagination_and_mixed_style_guards_ok')
-assert 'document:getFontSize()' in dialog
+assert 'Font:getFace("infofont")' in dialog
 assert 'self.popup_font_size' in dialog
-assert 'font_size = self.popup_font_size' in dialog
-assert 'title_face = Font:getFace("infofont", self.popup_font_size)' in dialog
+assert 'font_face = "infofont"' in dialog
+assert 'document:getFontSize()' not in dialog
 print('popup_document_font_size_guards_ok')
 assert 'getDiagnosticsText' not in main
 assert 'showDeveloperDiagnostics' not in main

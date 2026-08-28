@@ -15,7 +15,7 @@ local OTA = {
     owner = "trigon1998",
     repo = "wordwise.koplugin",
     asset_name = "wordwise.koplugin.zip",
-    current_version = "0.2.8",
+    current_version = "0.2.9",
 }
 OTA.api_url = "https://api.github.com/repos/" .. OTA.owner .. "/" .. OTA.repo .. "/releases/latest"
 
