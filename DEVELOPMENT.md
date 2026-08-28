@@ -396,3 +396,13 @@ This guide provides engineering guidance, not legal advice. When the upstream re
 [3]: https://koreader.rocks/doc/modules/luasettings.html "KOReader LuaSettings documentation"
 [4]: https://github.com/openlanguageprofiles/olp-en-cefrj "CEFR-J English vocabulary profiles"
 [5]: https://github.com/asxelot/wordwise.koplugin "Upstream Word Wise plugin"
+
+## 10.2 Paginated sense popup and mixed typography
+
+The Word Wise sense dialog uses `wordwise_hint_dialog.lua` rather than ButtonDialog's whole-table scrolling behavior. The header, page controls, fixed-height content viewport, and horizontal action footer are separate regions. This keeps **Know/Show**, **Dictionary**, and **Cancel** visible on every page while alternative senses are navigated with previous/next page controls.
+
+The selected sense is excluded from the alternatives list. Each page contains a bounded number of fixed-height rows, so a long sense list cannot push the action footer outside the dialog. The page indicator is disabled and has a no-op callback because ButtonTable wraps button callbacks without checking for nil callbacks.
+
+Each sense row is a tappable InputContainer composed of separate text widgets: CEFR uses a bold face, the part of speech uses `NotoSans-Italic.ttf` inside parentheses, and the definition uses the regular info face. This avoids making the entire definition bold and avoids relying on unsupported mixed-style labels in a standard Button.
+
+The pagination layer does not use a free-scrolling content container. On small screens it reduces the number of rows per page to preserve the fixed footer. Manual Android testing must verify that the page controls, row taps, fixed footer, and Back/tap-close behavior remain usable on the KOReader version being targeted.

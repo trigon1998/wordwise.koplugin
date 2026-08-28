@@ -23,7 +23,6 @@ local Event = require("ui/event")
 local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
 local ConfirmBox = require("ui/widget/confirmbox")
-local ButtonDialog = require("ui/widget/buttondialog")
 local RenderText = require("ui/rendertext")
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
@@ -39,6 +38,7 @@ local T = require("ffi/util").template
 local WordWiseDB = require("wordwise_db")
 local WordWiseL10N = require("wordwise_l10n")
 local WordWiseOTA = require("wordwise_ota")
+local WordWiseHintDialog = require("wordwise_hint_dialog")
 
 -- The plugin ships a built-in open dictionary (bundled beside this file), but a
 -- user-supplied canonical-schema database dropped into WW_DIR overrides it. The
@@ -47,10 +47,6 @@ local WW_DIR = DataStorage:getDataDir() .. "/wordwise"
 local STATE_PATH = WW_DIR .. "/state.lua"
 local KNOWN_WORDS_PATH = WW_DIR .. "/known_words.lua"
 local MAX_INLINE_HINT_WIDTH = 240
--- ButtonDialog derives row height from content unless height is explicit. Keep
--- sense rows uniform so the popup remains scannable and scrolls on a regular grid.
-local SENSE_ROW_HEIGHT = Screen:scaleBySize(52)
-
 -- Directory this plugin was loaded from, used to find the bundled dictionary.
 local PLUGIN_ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("[^/\\]+$", "")
 local BUNDLED_DB = PLUGIN_ROOT .. "wordwise.db"
@@ -524,78 +520,13 @@ function WordWise:setSelectedSense(entry)
 end
 
 function WordWise:showHintActions(hint)
-    local buttons = {}
-    local close_dialog
-    local current_entry = hint.entry
-    local current_key = current_entry and current_entry.sense_key
-    for _, entry in ipairs(hint.senses or {}) do
-        -- The selected/displayed sense is already shown in the dialog title.
-        -- Do not repeat it as a selectable row below.
-        local is_current = current_key and entry.sense_key == current_key
-        if not is_current and not self:isSenseKnown(entry) then
-            local cefr = entry.cefr_level or ""
-            local pos = entry.pos and (" (" .. entry.pos .. ")") or ""
-            table.insert(buttons, {{
-                text = string.format("%s%s: %s", cefr, pos, entry.gloss),
-                align = "left",
-                -- Explicit height makes one-line and wrapped rows identical.
-                height = SENSE_ROW_HEIGHT,
-                padding_v = Screen:scaleBySize(4),
-                -- Keep the row readable; KOReader may reduce the face or wrap
-                -- within this fixed-height cell for especially long glosses.
-                avoid_text_truncation = true,
-                text_font_bold = true,
-                text_font_size = 17,
-                callback = function()
-                    self:setSelectedSense(entry)
-                    close_dialog()
-                end,
-            }})
-        end
+    if self._hint_dialog then
+        UIManager:close(self._hint_dialog)
+        self._hint_dialog = nil
     end
-    close_dialog = function()
-        if self._hint_dialog then
-            local dialog = self._hint_dialog
-            self._hint_dialog = nil
-            UIManager:close(dialog)
-        end
-    end
-    table.insert(buttons, {
-        {
-            text = self:isSenseKnown(current_entry) and self:tr("show_short") or self:tr("know_short"),
-            callback = function()
-                self:setSenseKnown(current_entry, not self:isSenseKnown(current_entry))
-                close_dialog()
-                self:refresh()
-            end,
-            text_font_size = 15,
-            padding_h = 8,
-        },
-        {
-            text = self:tr("dictionary_short"),
-            callback = function()
-                close_dialog()
-                if self.ui.dictionary and self.ui.dictionary.onLookupWord then
-                    self.ui.dictionary:onLookupWord(hint.word, true, { hint.box })
-                end
-            end,
-            text_font_size = 15,
-            padding_h = 8,
-        },
-        {
-            text = self:tr("cancel"),
-            id = "close",
-            callback = close_dialog,
-            text_font_size = 15,
-            padding_h = 8,
-        },
-    })
-    self._hint_dialog = ButtonDialog:new{
-        title = T("Word Wise: %1", hint.word) .. "\n" .. (current_entry and current_entry.gloss or hint.text or ""),
-        title_align = "left",
-        width_factor = 0.92,
-        rows_per_page = 8,
-        buttons = buttons,
+    self._hint_dialog = WordWiseHintDialog:new{
+        owner = self,
+        hint = hint,
     }
     UIManager:show(self._hint_dialog)
     return true

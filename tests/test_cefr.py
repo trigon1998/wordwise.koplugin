@@ -22,7 +22,7 @@ print('multi_sense_example', word, count)
 print('entry_count', con.execute('SELECT COUNT(*) FROM entries').fetchone()[0])
 con.close()
 
-for path in [ROOT / 'main.lua', ROOT / 'wordwise_db.lua', ROOT / 'README.md']:
+for path in [ROOT / 'main.lua', ROOT / 'wordwise_db.lua', ROOT / 'wordwise_hint_dialog.lua', ROOT / 'README.md']:
     text = path.read_text()
     assert ('WordWise' + 'Kindle') not in text
     assert ('kll.' + 'en.en') not in text
@@ -32,22 +32,29 @@ main = (ROOT / 'main.lua').read_text()
 assert 'truncateTextByWidth' in main
 assert 'below_baseline' in main and 'below_top' in main
 assert 'hit_box' in main
-assert 'align = "left"' in main
-assert 'dictionary_short' in main and 'know_short' in main
+dialog = (ROOT / 'wordwise_hint_dialog.lua').read_text()
+assert 'align = "left"' in dialog
+assert 'dictionary_short' in dialog and 'know_short' in dialog
 assert 'screen_h' in main
 print('ui_layout_guards_ok')
 assert 'KNOWN_WORDS_PATH' in main
 assert 'known_words.lua' in main
 assert 'function WordWise:isWordKnown(entry)' in main
 assert 'iv[2] + GLOSS_HGAP' in main
-assert 'pos .. ")"' in main
+assert 'pos .. ")"' in main or 'self.entry.pos or ""' in dialog
 print('known_storage_and_overlap_guards_ok')
-assert 'local current_key = current_entry and current_entry.sense_key' in main
-assert 'local is_current = current_key and entry.sense_key == current_key' in main
-assert 'SENSE_ROW_HEIGHT' in main
-assert 'height = SENSE_ROW_HEIGHT' in main
-assert 'avoid_text_truncation = true' in main
-print('popup_duplicate_and_uniform_row_guards_ok')
+dialog = (ROOT / 'wordwise_hint_dialog.lua').read_text()
+assert 'local current_key = self.current_entry and self.current_entry.sense_key' in dialog
+assert 'entry.sense_key ~= current_key' in dialog
+assert 'page_size' in dialog and 'page_count' in dialog
+assert 'function HintDialog:setPage(page)' in dialog
+assert 'function HintDialog:_makeActions()' in dialog
+assert 'action_table' in dialog and 'content_viewport' in dialog
+assert 'bold = true' in dialog
+assert 'NotoSans-Italic.ttf' in dialog
+assert 'height_overflow_show_ellipsis = true' in dialog
+assert 'function SenseRow:onTap()' in dialog
+print('popup_pagination_and_mixed_style_guards_ok')
 ota = (ROOT / 'wordwise_ota.lua').read_text()
 assert 'trigon1998' in ota and 'wordwise.koplugin' in ota
 assert 'releases/latest' in ota and 'wordwise.koplugin.zip' in ota

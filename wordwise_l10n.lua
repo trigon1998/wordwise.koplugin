@@ -163,6 +163,9 @@ return {
         update_installed = "Update installed. Restart KOReader to activate it.",
         update_install_failed = "Update was not installed:\n%1",
         cancel = "Cancel",
+        previous = "Previous",
+        next = "Next",
+        page_indicator = "Page %1 / %2",
     },
     eo = {
         know = "Mi jam konas ĉi tiun vorton", show = "Montri Word Wise-sugeston",
