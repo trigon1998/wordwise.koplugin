@@ -1,0 +1,38 @@
+[
+  {
+    "release": "v0.2.1",
+    "published_at": "2026-08-27T13:25:12Z",
+    "downloads": 0,
+    "cumulative_downloads": 0
+  },
+  {
+    "release": "v0.2.2",
+    "published_at": "2026-08-27T15:06:20Z",
+    "downloads": 3,
+    "cumulative_downloads": 3
+  },
+  {
+    "release": "v0.2.3",
+    "published_at": "2026-08-27T15:45:25Z",
+    "downloads": 1,
+    "cumulative_downloads": 4
+  },
+  {
+    "release": "v0.2.4",
+    "published_at": "2026-08-27T16:20:07Z",
+    "downloads": 1,
+    "cumulative_downloads": 5
+  },
+  {
+    "release": "v0.2.5",
+    "published_at": "2026-08-27T17:07:46Z",
+    "downloads": 1,
+    "cumulative_downloads": 6
+  },
+  {
+    "release": "v0.2.6",
+    "published_at": "2026-08-28T02:02:00Z",
+    "downloads": 1,
+    "cumulative_downloads": 7
+  }
+]

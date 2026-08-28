@@ -1,39 +1,79 @@
-# Word Wise for KOReader — Android CEFR fork
+# Word Wise for KOReader
 
-This fork is based on [asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin) and is optimized for **KOReader on Android**. It shows short definitions above difficult words as a per-page overlay without rewriting the book file.
+<p align="center">
+  <img src="screenshot.png" alt="Word Wise hiển thị gợi ý CEFR trên trang sách" width="720">
+</p>
 
-The fork removes Kindle/Amazon corpus detection and conversion. Its bundled data is built from the open CEFR-J and Octanove vocabulary profiles plus Open English WordNet definitions. The project keeps upstream attribution and records the data sources used by the build tools.
+<p align="center">
+  <b>Gợi ý từ vựng theo CEFR cho KOReader, tập trung cho Android.</b><br>
+  Hiển thị định nghĩa ngắn ngay trên trang sách mà không sửa nội dung sách.
+</p>
 
-![Word Wise showing glosses above difficult words](screenshot.png)
+<p align="center">
+  <a href="https://github.com/trigon1998/wordwise.koplugin/releases/latest"><img src="https://img.shields.io/github/v/release/trigon1998/wordwise.koplugin?label=release" alt="Latest release"></a>
+  <a href="https://github.com/trigon1998/wordwise.koplugin/releases"><img src="https://img.shields.io/github/downloads/trigon1998/wordwise.koplugin/total?label=downloads" alt="GitHub downloads"></a>
+  <a href="https://github.com/trigon1998/wordwise.koplugin/actions/workflows/update-download-stats.yml"><img src="https://github.com/trigon1998/wordwise.koplugin/actions/workflows/update-download-stats.yml/badge.svg" alt="Download stats workflow"></a>
+</p>
 
-## Install on Android
+Word Wise là fork Android-focused của [`asxelot/wordwise.koplugin`](https://github.com/asxelot/wordwise.koplugin). Plugin đặt các gloss ngắn phía trên từ khó, lọc theo **CEFR**, hỗ trợ nhiều sense theo ngữ cảnh, lưu lựa chọn của người dùng bền vững và cập nhật qua GitHub Releases OTA.
 
-1. Download the release ZIP and unzip it as `wordwise.koplugin`.
-2. Copy the folder to the KOReader plugins directory, normally `koreader/plugins/`.
-3. Restart KOReader.
-4. Open a reflowable book and select **☰ → More tools → Word Wise → Show inline hints**.
+> **Phạm vi:** plugin dành cho tài liệu reflowable/crengine trong KOReader. Kindle/Amazon conversion, Kindle corpus và định dạng fixed-layout/PDF không thuộc fork này.
 
-The plugin targets reflowable/crengine documents. Paging/fixed-layout documents are not currently supported because the overlay needs KOReader’s visible-word and screen-box APIs.
+## Tính năng chính
 
-## CEFR filtering
+| Tính năng | Mô tả |
+| --- | --- |
+| **CEFR filtering** | Chọn ngưỡng A1, A2, B1, B2, C1 hoặc C2. Các sense ở mức đã chọn và cao hơn sẽ được xét hiển thị. |
+| **Multi-sense hints** | Mỗi từ có thể có nhiều định nghĩa, POS và `sense_key`; người đọc có thể chọn sense phù hợp với ngữ cảnh. |
+| **Popup phân trang** | Danh sách sense thay thế được chia thành các trang cố định, không dùng một danh sách cuộn làm mất footer. |
+| **Footer cố định** | Ba nút **Know/Show**, **Dictionary** và **Cancel** luôn hiển thị theo hàng ngang. |
+| **Typography rõ ràng** | Chỉ tiền tố CEFR in đậm; POS in nghiêng trong ngoặc đơn; định nghĩa dùng font thường. |
+| **Trạng thái bền vững** | Danh sách từ đã biết và sense đã chọn nằm ngoài thư mục plugin nên không bị mất khi cập nhật. |
+| **OTA qua GitHub Releases** | Menu trong KOReader có thể kiểm tra và cài bản release mới với asset ZIP và checksum chuẩn. |
+| **Tối ưu Android** | Lookup cache có giới hạn, refresh được gộp, callback cũ bị chặn theo lifecycle và cây widget popup được giải phóng khi đổi trang. |
 
-The menu uses a **CEFR threshold** rather than the upstream 1–5 difficulty scale. A selected threshold shows hints at that level and above. For example, choosing `B2` permits `B2`, `C1`, and `C2` entries while hiding `A1`–`B1` entries.
+## Cài đặt
 
-CEFR levels are stored as `A1`, `A2`, `B1`, `B2`, `C1`, or `C2`. Unknown or malformed levels are ignored when building the database, rather than being silently assigned a level.
+<details><summary><b>Cài trên Android</b></summary>
 
-## Multiple hints and context selection
+1. Mở [trang Releases](https://github.com/trigon1998/wordwise.koplugin/releases) và tải `wordwise.koplugin.zip`.
+2. Giải nén thành thư mục có tên chính xác là `wordwise.koplugin`.
+3. Chép thư mục đó vào thư mục plugin của KOReader, thường là `koreader/plugins/`.
+4. Khởi động lại KOReader, mở một sách reflowable rồi vào **Menu → More tools → Word Wise → Show inline hints**.
 
-A word can have multiple senses. The database stores each sense as a separate row with a stable `sense_key`, part of speech, CEFR level, and source. The first eligible sense is shown by default.
+</details>
 
-Inline hints are bounded to a compact width. When a definition is wider than that limit, the inline rendering uses a single ellipsis glyph (`…`) instead of spilling across the page; tapping the hint opens the full definition and the available senses. If an above-word hint would cross the top safe inset, the complete hint unit is placed below the word with an upward-pointing marker.
+<details><summary><b>Cập nhật OTA</b></summary>
 
-Tap a visible hint to open the Word Wise action dialog. The full currently displayed definition appears in the title area, so that same sense is omitted from the selectable list below and is not duplicated. When there are many alternatives, they are split into discrete pages rather than placed in one scrolling list. The page controls sit above a fixed-height content viewport, and the three action controls remain visible in a fixed horizontal footer on every page. Alternative rows are left-aligned and equal-height: only the CEFR prefix is bold, the POS is italic inside parentheses, and the definition remains regular weight. Selecting a sense saves it for that lemma and repaints the current page so the preferred gloss is shown on future occurrences.
+Bản release phải chứa đúng hai asset `wordwise.koplugin.zip` và `wordwise.koplugin.zip.sha256`. Trong KOReader, mở menu Word Wise và chọn **Check for updates**. Plugin kiểm tra GitHub Releases, xác minh asset/checksum và thay thế thư mục plugin sau khi người dùng xác nhận.
 
-The fixed action row provides **Know** or **Show**, **Dictionary**, and **Cancel**. **Previous**, **Next**, and a page indicator are localized separately; the pagination controls are disabled when there is only one page. **Know/Show** suppresses or restores the entire lemma: pressing **Know** hides every sense and every inflected occurrence of that word. **Dictionary** invokes KOReader’s standard dictionary lookup for the underlying word. A tap outside a hint is deliberately not consumed, so Android page-turn gestures continue to work normally.
+OTA chỉ thay đổi mã nguồn trong thư mục plugin. Hai file trạng thái trong thư mục dữ liệu KOReader là `<koreader data dir>/wordwise/known_words.lua` và `<koreader data dir>/wordwise/state.lua`, vì vậy chúng không bị ghi đè khi cập nhật.
 
-## Database schema
+</details>
 
-The fork reads this schema:
+## Cách sử dụng
+
+### Lọc theo CEFR
+
+Mở cấu hình Word Wise và chọn **CEFR threshold**. Với ngưỡng `B2`, plugin xét các sense `B2`, `C1` và `C2`, đồng thời loại các sense `A1` đến `B1`. Các mức hợp lệ là `A1`, `A2`, `B1`, `B2`, `C1` và `C2`.
+
+### Chọn sense theo ngữ cảnh
+
+Chạm vào một hint đang hiển thị để mở popup. Sense hiện tại được đặt trong phần tiêu đề và **không lặp lại** trong danh sách bên dưới. Nếu có nhiều sense thay thế, dùng **Previous** và **Next** để chuyển trang. Mỗi hàng có cùng chiều cao; chạm vào một hàng để lưu sense đó làm lựa chọn ưu tiên cho lemma.
+
+Popup dùng các vùng riêng cho tiêu đề, điều khiển trang, viewport nội dung và footer. Vì vậy **Know/Show**, **Dictionary** và **Cancel** vẫn nằm trên màn hình ở mọi trang, kể cả trang cuối có ít sense hơn.
+
+### Đánh dấu từ đã biết
+
+Chọn **Know** để ẩn toàn bộ lemma, không chỉ sense đang hiển thị. Chọn **Show** trong lần mở sau để khôi phục. Trạng thái này bao phủ các lần xuất hiện và dạng biến cách mà pipeline lookup quy về cùng lemma.
+
+### Mở từ điển KOReader
+
+Chọn **Dictionary** để chuyển từ hiện tại và vùng hộp tương ứng cho trình tra từ điển chuẩn của KOReader.
+
+## Dữ liệu từ điển
+
+Cơ sở dữ liệu bundled sử dụng schema nhiều sense sau đây:
 
 ```sql
 CREATE TABLE entries (
@@ -50,11 +90,11 @@ CREATE INDEX entries_word_idx ON entries(word COLLATE NOCASE);
 CREATE INDEX entries_cefr_idx ON entries(cefr_level);
 ```
 
-A user database placed at `<koreader data dir>/wordwise/wordwise.db` overrides the bundled database. User choices are stored separately in `<koreader data dir>/wordwise/known_words.lua` and `<koreader data dir>/wordwise/state.lua`, outside the plugin folder. Updating or replacing `wordwise.koplugin` therefore does not remove the known-word list. The Word Wise menu includes **Known words file** to show the exact path. The runtime also accepts the upstream `difficulty` schema as a temporary compatibility path and maps its five bands approximately to CEFR.
+Dictionary được build từ CEFR-J, Octanove C1/C2, các gloss đã tuyển chọn và Open English WordNet. Builder chỉ ghi CEFR mapping đã được xác định; dòng không có mapping hợp lệ sẽ bị báo và bỏ qua. Có thể đặt database người dùng tại `<koreader data dir>/wordwise/wordwise.db` để override database bundled.
 
-## Building the dictionary
+## Phát triển
 
-The preferred build uses the open CEFR-J and Octanove profiles together with Open English WordNet:
+<details><summary><b>Build dictionary và chạy kiểm tra</b></summary>
 
 ```sh
 cd tools
@@ -65,23 +105,42 @@ python3 build_cefr_wordnet_dict.py \
   --out ../wordwise.db
 ```
 
-The builder preserves curated rows from `open_glosses.tsv`, adds multiple WordNet senses for CEFR-mapped lemmas, and never invents a CEFR level. Gloss rows without an audited CEFR mapping are reported and skipped.
+Các kiểm tra chính của repository gồm Lua syntax validation, Python regression/database tests, kiểm tra schema, loại bỏ Kindle runtime, lifecycle/cache guards, và kiểm tra contract của OTA:
 
-To build only from curated glosses, use `build_cefr_dict.py`. The removed upstream Zipf difficulty pipeline is intentionally not part of this fork’s release build.
+```sh
+python3 /home/ubuntu/check_lua_syntax.py
+python3 tests/test_cefr.py
+python3 -m py_compile tools/*.py
+```
 
-## Data and attribution
+</details>
 
-The bundled dictionary uses:
+Kiến trúc runtime và quy trình release được ghi trong [`DEVELOPMENT.md`](DEVELOPMENT.md). Mã popup phân trang nằm trong [`wordwise_hint_dialog.lua`](wordwise_hint_dialog.lua), còn logic database, OTA và localization nằm trong các module tương ứng ở thư mục gốc.
 
-- CEFR-J Vocabulary Profile 1.5, provided by the CEFR-J project and Tono Laboratory at Tokyo University of Foreign Studies.
-- Octanove Vocabulary Profile C1/C2 1.0, used under its stated CC BY-SA 4.0 terms.
-- Open English WordNet 2024 definitions.
-- Project-curated glosses in `tools/open_glosses.tsv`.
+## Giới hạn và kiểm thử Android
 
-Review the upstream repository’s licensing status before publishing a redistributed fork. The upstream repository does not expose a recognized GitHub license, so attribution and permission should be clarified with the original author before distributing modified upstream code or assets.
+Các kiểm tra tĩnh không thay thế được kiểm thử trên thiết bị. Trước khi phân phối một bản release, cần kiểm tra trên KOReader Android với một từ có nhiều sense: popup nhiều trang, footer luôn hiển thị, chuyển sang trang sau rồi chọn sense, **Know/Show**, **Dictionary**, **Cancel**, Back/tap ngoài popup và chuyển trang lặp lại để quan sát độ ổn định bộ nhớ.
 
-## Compatibility and stability notes
+## Đóng góp
 
-The CEFR migration does not alter the page traversal, overlay painting, reflow hooks, line-spacing adjustment, or screen-box anchoring. Those are the stability-critical parts of the plugin. The migration changes database lookup and menu filtering only.
+Issue và pull request nên mô tả phiên bản KOReader, thiết bị Android, định dạng sách, CEFR threshold, số lượng sense và các bước tái hiện. Khi thay đổi schema hoặc asset release, hãy cập nhật cả `DEVELOPMENT.md`, regression tests và quy trình OTA.
 
-The main Android-specific risk is interaction: the hint tap zone is full-screen for priority purposes but consumes a gesture only when its coordinate intersects a rendered hint or its compact text box. This follows KOReader’s existing highlight interaction pattern and avoids stealing ordinary page turns. Layout checks the top and bottom safe insets before painting, truncates by measured glyph width rather than character count, and searches available horizontal gaps before dropping a colliding hint.
+## Tham khảo
+
+Cấu trúc README này tham khảo cách trình bày giới thiệu ngắn, bảng tính năng, hướng dẫn thu gọn và phần usage của Size Limit [1]. Số lượt tải được lấy từ GitHub Releases API theo asset ZIP cài đặt [2]; file checksum không được tính vào biểu đồ.
+
+## Thống kê lượt tải
+
+Biểu đồ dưới đây thể hiện số lượt tải `wordwise.koplugin.zip` theo từng release và đường tổng lũy kế. Dữ liệu hiện được cập nhật tự động hằng tuần bằng GitHub Actions; có thể chạy workflow thủ công từ tab **Actions** khi cần làm mới ngay.
+
+<p align="center">
+  <img src="download-stats.svg" alt="Biểu đồ lượt tải Word Wise theo release" width="920">
+</p>
+
+Dữ liệu thô được lưu trong [`download-stats.json`](download-stats.json). GitHub cung cấp bộ đếm theo asset release, không phải lịch sử tải theo từng ngày; vì vậy biểu đồ này đo lượt tải theo release, không diễn giải thành lượt tải hàng ngày [2].
+
+## References
+
+[1]: https://github.com/ai/size-limit "ai/size-limit README"
+[2]: https://docs.github.com/en/rest/releases/releases "GitHub REST API — Releases"
+[3]: https://github.com/trigon1998/wordwise.koplugin "Word Wise KOReader Android fork"
