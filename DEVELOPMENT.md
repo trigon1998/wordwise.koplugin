@@ -1,107 +1,122 @@
-# Word Wise for KOReader Android — Development Guide
+# Word Wise for KOReader Android — Tài liệu phát triển
 
-## 1. Project scope
+## 1. Mục đích và phạm vi
 
-This project is an Android-focused fork of [asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin). It is a KOReader plugin written in Lua that paints compact vocabulary hints on top of the original document page. It does not rewrite EPUB/PDF content and does not create a second copy of the book.
+Word Wise là plugin Lua cho [KOReader](https://github.com/koreader/koreader), được phát triển từ [`asxelot/wordwise.koplugin`](https://github.com/asxelot/wordwise.koplugin) và tối ưu cho KOReader trên Android. Plugin đọc các từ đang hiển thị trên trang, tra cứu gloss ngắn trong SQLite, rồi vẽ gợi ý lên trên bản render gốc của tài liệu.
 
-The fork deliberately removes Kindle/Amazon corpus discovery and conversion. Its bundled dictionary is generated from open vocabulary profiles and open English WordNet data, while the user may provide a separate database under KOReader's data directory. The supported target is KOReader on Android and other KOReader builds with the same reflowable-document APIs.
+Plugin **không sửa EPUB**, không tạo bản sao sách và không thay đổi nội dung tài liệu. Fork này loại bỏ Kindle/Amazon corpus, Kindle conversion và các công cụ build phụ thuộc vào dữ liệu Amazon. Dữ liệu bundled được xây dựng từ các nguồn CEFR/WordNet mở và các gloss đã tuyển chọn trong repository.
 
-The main product requirements are:
+| Phạm vi | Quyết định hiện tại |
+| --- | --- |
+| Nền tảng chính | KOReader Android |
+| Loại tài liệu | Reflowable/crengine; cần API từ, hộp chữ và reflow của KOReader |
+| Không hỗ trợ | PDF, fixed-layout và tài liệu không cung cấp screen-box cho từ |
+| Mô hình độ khó | CEFR `A1`, `A2`, `B1`, `B2`, `C1`, `C2` |
+| Dictionary | Nhiều sense cho mỗi lemma, kèm POS, CEFR, `sense_key` và nguồn |
+| Trạng thái người dùng | Lưu ngoài thư mục plugin để tồn tại qua OTA/update |
+| Cập nhật | GitHub Releases với ZIP cài đặt và checksum SHA-256 |
+| Phiên bản hiện tại | `0.2.6` |
 
-| Area | Current behavior |
-|---|---|
-| Document support | Reflowable/crengine documents. PDF and fixed-layout documents are not supported by the overlay engine. |
-| Difficulty model | CEFR levels `A1`, `A2`, `B1`, `B2`, `C1`, and `C2`, replacing the upstream 1–5 difficulty setting. |
-| Dictionary | Multiple senses per lemma, with CEFR level, part of speech, stable sense key, and data source. |
-| Inline display | A bounded single-line gloss with measured-width ellipsis. A long gloss is available in full through the hint popup. |
-| Layout | Hint placement above the word when possible, below the word when the top safe inset would be crossed, and collision-aware horizontal placement. |
-| Interaction | Tapping a hint opens sense selection, lemma-wide Know/Show, KOReader Dictionary, and Cancel actions. |
-| User state | Known words and selected senses are stored outside the plugin directory and survive plugin replacement. |
-| Updates | The OTA updater checks GitHub Releases from the fork repository and installs only a validated release asset. |
+Các API nền tảng của plugin nên tiếp tục tuân theo kiến trúc widget, ReaderView và reflow của KOReader thay vì sửa trực tiếp document renderer.[1]
 
-## 2. Repository layout
+## 2. Nguyên tắc kiến trúc
+
+Có bốn nguyên tắc cần giữ khi mở rộng project.
+
+Thứ nhất, **overlay là paint-only**. KOReader tiếp tục render sách; Word Wise chỉ vẽ text, marker và đường gạch chân lên vùng hiển thị hiện tại. Không được đưa gloss vào EPUB, PDF hoặc DOM nội bộ của tài liệu.
+
+Thứ hai, **lookup và layout phải độc lập**. Database chỉ trả về sense và metadata. Logic CEFR, de-inflection và cache nằm trong `wordwise_db.lua`; logic đo kích thước, đặt vị trí, hitbox và paint nằm trong `main.lua`.
+
+Thứ ba, **trạng thái người dùng nằm ngoài plugin**. OTA có thể thay toàn bộ thư mục `wordwise.koplugin`, nhưng không được xóa `known_words.lua`, `state.lua` hoặc database người dùng trong thư mục dữ liệu KOReader.
+
+Thứ tư, **mọi bộ nhớ có thể tăng theo thời gian phải có giới hạn hoặc lifecycle rõ ràng**. Cache lookup bị giới hạn 1.024 surface forms, hint chỉ giữ cho trang hiện tại, callback chờ được bảo vệ bằng lifecycle generation, và cây widget popup cũ phải được giải phóng trước khi tạo trang mới.
+
+## 3. Cấu trúc repository
 
 ```text
 wordwise.koplugin/
-├── _meta.lua                         # KOReader plugin metadata
-├── main.lua                          # lifecycle, menu, overlay, touch, popup, state
-├── wordwise_db.lua                   # SQLite lookup and CEFR compatibility layer
-├── wordwise_l10n.lua                 # plugin-specific labels and translations
-├── wordwise.db                       # bundled CEFR/multi-sense database
-├── README.md                         # user-facing overview and installation notes
-├── DEVELOPMENT.md                    # this development guide
+├── _meta.lua                         # metadata và version của plugin
+├── main.lua                          # lifecycle, menu, overlay, touch và state
+├── wordwise_db.lua                   # SQLite lookup, CEFR và compatibility layer
+├── wordwise_hint_dialog.lua          # popup sense phân trang, footer cố định
+├── wordwise_l10n.lua                 # nhãn plugin và bản dịch
+├── wordwise_ota.lua                  # kiểm tra/tải/cài GitHub Release
+├── wordwise.db                       # database CEFR/multi-sense bundled
+├── README.md                         # tài liệu người dùng
+├── DEVELOPMENT.md                    # tài liệu kỹ thuật này
+├── download-stats.json               # dữ liệu lượt tải ZIP theo release
+├── download-stats.svg                # biểu đồ lượt tải được nhúng trong README
+├── .github/workflows/
+│   └── update-download-stats.yml     # workflow cập nhật biểu đồ hằng tuần
 ├── tests/
-│   └── test_cefr.py                  # database and static regression checks
+│   └── test_cefr.py                  # regression, schema và static guards
 └── tools/
-    ├── build_cefr_dict.py            # curated gloss importer
-    ├── build_cefr_wordnet_dict.py    # CEFR + WordNet multi-sense builder
-    ├── open_glosses.tsv              # editable curated gloss source
+    ├── build_cefr_dict.py            # importer gloss đã tuyển chọn
+    ├── build_cefr_wordnet_dict.py    # builder CEFR + WordNet multi-sense
+    ├── update_download_chart.py      # lấy GitHub API và sinh biểu đồ
+    ├── open_glosses.tsv              # nguồn gloss có thể chỉnh sửa
     ├── cefrj-vocabulary-profile-1.5.csv
     └── octanove-vocabulary-profile-c1c2-1.0.csv
 ```
 
-The plugin runtime must be installed as a directory named exactly `wordwise.koplugin`. `main.lua` must be directly inside that directory. The bundled database must be adjacent to `main.lua` so the plugin can locate it through its own module path.
+Khi đóng gói để cài, thư mục gốc trong archive phải có tên chính xác là `wordwise.koplugin/`, và `main.lua` phải nằm trực tiếp bên trong thư mục đó. `wordwise.db` bundled phải nằm cạnh `main.lua`.
 
-## 3. Runtime architecture
+## 4. Luồng runtime
 
-`main.lua` owns the plugin lifecycle. During initialization it registers the main-menu item, creates the gloss font, opens the paint-only ReaderView module, registers touch zones, and initializes persistent state. The overlay is intentionally paint-only: the document continues to be rendered by KOReader, while Word Wise draws the hint text and marker on top.
+`main.lua` sở hữu lifecycle của plugin. Khi khởi tạo, module đăng ký menu, font gloss, ReaderView paint module, vùng touch và các file state. Chỉ tài liệu được `isSupportedDocument()` xác nhận mới được xử lý.
 
-The page flow is:
+Luồng tính hint cho một trang như sau:
 
 ```text
-KOReader opens/reflows page
+KOReader mở/reflow trang
         │
         ▼
 WordWise:computePageHints()
         │
-        ├── obtain visible words and screen boxes
-        ├── lookup all dictionary senses
-        ├── apply CEFR threshold
-        ├── skip known lemmas
-        ├── select saved sense or first eligible sense
-        └── store hint geometry and hit-box data
+        ├── lấy các từ đang nhìn thấy và screen box
+        ├── tra lookupAll() cho từng surface word
+        ├── áp dụng CEFR threshold
+        ├── bỏ qua lemma đã biết
+        ├── chọn sense đã lưu hoặc sense đủ điều kiện đầu tiên
+        └── lưu gloss, box, hitbox và dữ liệu đo
         │
         ▼
-ReaderView overlay calls WordWise:paintHints()
+ReaderView gọi WordWise:paintHints()
         │
-        ├── measure gloss width
-        ├── truncate long glosses with `…`
-        ├── place above or below the word
-        ├── find a non-overlapping horizontal slot
-        └── paint text, marker, and optional underline
+        ├── đo chiều rộng glyph bằng RenderText
+        ├── cắt gloss dài với `…`
+        ├── đặt gloss phía trên hoặc dưới từ
+        ├── tìm khoảng ngang không chồng lấn
+        └── vẽ text, marker và underline tùy cấu hình
 ```
 
-The stability-critical interfaces are KOReader's visible-word enumeration, screen-box calculation, line-spacing adjustment, ReaderView overlay registration, and reflow/page-position callbacks. Changes to dictionary data should not modify these interfaces.
+Các điểm hook nhạy cảm nhất là visible-word enumeration, screen-box calculation, interline spacing, ReaderView overlay và các callback sau khi reflow/page turn. Thay đổi database hoặc popup không được làm thay đổi những interface này nếu không có kiểm thử Android tương ứng.
 
-The plugin uses KOReader's documented ReaderView and widget APIs rather than directly modifying the document renderer.[1] The touch behavior follows the same principle as KOReader's highlight interaction: a touch miss is not consumed, allowing normal Android page-turn zones to continue processing the gesture.[2]
+## 5. Mô hình CEFR
 
-## 4. CEFR model and stability
-
-The runtime order is:
+Thứ tự CEFR được chuẩn hóa như sau:
 
 ```text
 A1 < A2 < B1 < B2 < C1 < C2
 ```
 
-The menu value is a **threshold**. If the selected threshold is `B2`, the plugin permits `B2`, `C1`, and `C2`; it hides `A1` through `B1`. The database stores the normalized level as text and the runtime maps it to an integer rank only for comparison.
+Giá trị trong menu là **ngưỡng**, không phải một level duy nhất. Nếu ngưỡng là `B2`, runtime cho phép `B2`, `C1` và `C2`, đồng thời loại `A1` đến `B1`. Text CEFR được lưu trong database; runtime chỉ ánh xạ sang rank số để so sánh.
 
-The CEFR migration is low risk for page stability because it changes only database lookup and hint filtering. It does not change visible-word traversal, screen-box anchoring, line-spacing hooks, overlay painting, or reflow callbacks. The bundled database uses CEFR as authoritative data. The runtime retains a compatibility path for old upstream databases containing a `difficulty` column, but the five old bands are only an approximate migration and must not be treated as audited CEFR classification.
+| Trách nhiệm | Module đúng |
+| --- | --- |
+| Chuẩn hóa level và so sánh rank | `wordwise_db.lua` |
+| Menu threshold và nhãn | `main.lua`, `wordwise_l10n.lua` |
+| Mapping dataset sang CEFR | `tools/build_cefr_wordnet_dict.py` |
+| Đo kích thước và vẽ | `main.lua` |
+| Lưu lựa chọn người dùng | `state.lua` trong data directory |
 
-When adding another level system, keep the following boundaries:
+Builder **không được tự suy đoán CEFR**. Gloss không có mapping đã kiểm tra phải được báo và loại khỏi database. Compatibility path cho schema cũ có `difficulty` chỉ là ánh xạ xấp xỉ, không được xem như CEFR đã kiểm định.
 
-| Concern | Correct location |
-|---|---|
-| Level normalization and rank | `wordwise_db.lua` |
-| Threshold menu values | `main.lua` and `wordwise_l10n.lua` |
-| Dataset-to-level mapping | `tools/build_cefr_wordnet_dict.py` |
-| Geometry and drawing | `main.lua`, independent of level names |
-| User selection persistence | KOReader data directory state file |
+Việc chuyển từ difficulty 1–5 sang CEFR có rủi ro thấp đối với độ ổn định page layout vì nó chỉ tác động đến lookup và filtering. Không được để tên level ảnh hưởng đến screen-box traversal, line spacing, overlay paint hoặc reflow callback.
 
-A dictionary builder must never invent a CEFR level. A row without an audited mapping is reported and omitted from the generated database.
+## 6. Database contract
 
-## 5. Database contract
-
-The canonical schema is:
+Schema canonical là:
 
 ```sql
 CREATE TABLE entries (
@@ -118,41 +133,39 @@ CREATE INDEX entries_word_idx ON entries(word COLLATE NOCASE);
 CREATE INDEX entries_cefr_idx ON entries(cefr_level);
 ```
 
-Every sense is a separate row. `sense_key` must be deterministic and unique so that saved selections remain stable across page turns. A practical fallback key is the normalized lemma, part of speech, and gloss joined with a non-printing separator; a builder may use a stronger stable identifier when the upstream source provides one.
+Mỗi sense là một row riêng. `sense_key` phải ổn định và duy nhất để lựa chọn đã lưu không bị thay đổi qua các lần page turn. Nếu nguồn không cung cấp ID bền vững, builder có thể tạo key từ lemma đã normalize, POS và gloss bằng separator không in được.
 
-`wordwise_db.lua` exposes two important lookup levels:
+| API | Mục đích |
+| --- | --- |
+| `lookup(word)` | Trả sense đầu tiên, dùng cho caller đơn giản hoặc compatibility |
+| `lookupAll(word)` | Trả mọi sense đủ điều kiện cho filtering và popup |
 
-| Function | Purpose |
-|---|---|
-| `lookup(word)` | Returns the first usable sense for compatibility with simple callers. |
-| `lookupAll(word)` | Returns every usable sense for context selection and popup display. |
+Lookup hỗ trợ de-inflection thận trọng cho một số dạng plural, `-ed`, `-ing` và `-ly`. Không mở rộng heuristic tùy tiện vì stem sai có thể hiển thị gloss của lemma khác.
 
-The lookup layer performs conservative de-inflection for common plural, `-ed`, `-ing`, and `-ly` forms. It should not be expanded casually: an incorrect stem can cause a hint for a different lemma to appear on the page.
-
-A user database placed at:
+Database người dùng đặt tại:
 
 ```text
 <KOReader data directory>/wordwise/wordwise.db
 ```
 
-takes precedence over the bundled database. The database is opened read-only by the runtime. Rebuild the database offline and replace it as a complete file; do not mutate the bundled file from inside KOReader.
+sẽ được ưu tiên hơn database bundled. Runtime mở SQLite ở chế độ read-only. Database nên được build offline và thay thế như một file hoàn chỉnh; plugin không được mutate database bundled khi đang chạy.
 
-## 6. Dictionary build pipeline
+## 7. Build dictionary
 
-The preferred build command is:
+Builder chính kết hợp CEFR-J, Octanove C1/C2, curated glosses và các sense từ Open English WordNet:
 
 ```sh
 cd tools
-python3 build_cefr_wordnet_dict.py \\
-  --cefrj cefrj-vocabulary-profile-1.5.csv \\
-  --octanove octanove-vocabulary-profile-c1c2-1.0.csv \\
-  --glosses open_glosses.tsv \\
+python3 build_cefr_wordnet_dict.py \
+  --cefrj cefrj-vocabulary-profile-1.5.csv \
+  --octanove octanove-vocabulary-profile-c1c2-1.0.csv \
+  --glosses open_glosses.tsv \
   --out ../wordwise.db
 ```
 
-The builder merges the CEFR-J and Octanove profiles, preserves curated project glosses, and adds multiple open WordNet senses for CEFR-mapped lemmas. Curated rows should take precedence when the project has a better short gloss. WordNet definitions should remain attributable to their source and should not be rewritten in a way that obscures provenance.
+`open_glosses.tsv` được ưu tiên khi project có gloss ngắn và phù hợp hơn. Sense từ WordNet phải giữ nguồn gốc có thể truy nguyên. Không thêm Kindle/Amazon-derived data vào public build.
 
-Before committing a rebuilt database, check:
+Trước khi commit database mới, cần kiểm tra số row, phân bổ CEFR và độ phủ multi-sense:
 
 ```sh
 python3 - <<'PY'
@@ -164,57 +177,73 @@ print(con.execute('select word, count(*) from entries group by word having count
 PY
 ```
 
-Do not add Kindle/Amazon-derived data to the public build. Keep raw source files and attribution in the repository so that another developer can reproduce the database.
+Các file raw source, license và attribution cần được giữ trong repository để developer khác có thể tái tạo database.
 
-## 7. Hint rendering and collision handling
+## 8. Inline rendering và collision handling
 
-The inline gloss width is measured using KOReader's rendering metrics, not by counting characters. The current maximum is controlled by `MAX_INLINE_HINT_WIDTH`. If a definition exceeds the available width, `RenderText:truncateTextByWidth` produces a compact string ending in `…`. The full definition remains in the hint object and is shown in the popup title.
+Gloss inline được đo bằng rendering metrics của KOReader, không cắt theo số ký tự. `MAX_INLINE_HINT_WIDTH` giới hạn chiều rộng. Nếu gloss vượt giới hạn, `RenderText:truncateTextByWidth` tạo chuỗi ngắn kết thúc bằng `…`; bản đầy đủ vẫn nằm trong hint object và được hiển thị trong popup.
 
-The vertical placement algorithm calculates the word box, gloss metrics, top/bottom safe insets, and marker position. It prefers an above-word gloss. If the gloss would cross the top safe inset, the entire unit is moved below the word and the marker points upward.
+Thuật toán vertical placement ưu tiên gloss phía trên từ. Nếu top safe inset bị vượt, toàn bộ hint unit chuyển xuống dưới từ và marker đổi hướng lên. Không được chỉ di chuyển text mà bỏ marker hoặc hitbox ở vị trí cũ.
 
-For horizontal collisions, the renderer:
+Để xử lý collision ngang, renderer nhóm box theo line band, ưu tiên từ CEFR cao hơn, thử vị trí chính giữa rồi thử các khoảng trái/phải hợp lệ. Hint có độ ưu tiên thấp có thể bị bỏ nếu không còn khoảng hợp pháp, nhưng không được vẽ các định nghĩa chồng lên nhau.
 
-1. quantizes nearby word boxes into a line band;
-2. sorts candidates by line band and CEFR rank, preferring harder words;
-3. tries the word-centered position;
-4. tries the left and right gaps around already placed hints;
-5. checks the minimum horizontal gap; and
-6. drops a lower-priority hint only if no legal slot remains.
+Sau khi chọn vị trí cuối cùng, `hit_box` phải được cập nhật theo đúng geometry mới. Hint nhìn thấy nhưng không thể chạm là regression chức năng.
 
-This is preferable to drawing all hints at their original centered positions. A crowded line may still omit some hints, but it must not render overlapping definitions that are unreadable or visually misleading.
+## 9. Popup sense phân trang
 
-Any future layout change must preserve `hit_box` updates after the final horizontal position is chosen. A painted hint that cannot be tapped is a functional regression.
+Popup nằm trong `wordwise_hint_dialog.lua` và không dùng một `ButtonDialog` cuộn toàn bộ. Cấu trúc popup gồm bốn vùng độc lập:
 
-## 8. Hint interaction and popup
+| Vùng | Hành vi |
+| --- | --- |
+| Header | Hiển thị word và definition đầy đủ của sense hiện tại |
+| Page controls | Previous, page indicator và Next |
+| Content viewport | Các sense thay thế của trang hiện tại, chiều cao cố định |
+| Footer | Know/Show, Dictionary và Cancel trong một hàng ngang cố định |
 
-A tap is accepted only when its screen coordinates intersect a rendered hint hit box. A tap outside all hints returns `false`, so KOReader can continue with its normal touch handling.
+Sense hiện tại được lọc bằng `sense_key` và không xuất hiện lần nữa trong alternatives. Các sense đã biết cũng bị loại khỏi danh sách. Nếu có nhiều alternatives, `page_size` được tính từ ngân sách chiều cao của dialog sau khi trừ header, separator, page controls, footer, border và padding. Viewport vẫn giữ chiều cao cố định ở trang cuối để footer không nhảy vị trí.
 
-The popup has three logical areas:
+Mỗi row là `SenseRow`, có chiều cao bằng nhau và là một `InputContainer` có vùng tap riêng. Typography được tạo từ các widget con độc lập:
 
-| Area | Behavior |
-|---|---|
-| Title | Shows the selected word and the full currently displayed definition. |
-| Sense list | Shows alternative eligible senses only. The sense already displayed in the title is excluded to avoid duplication. |
-| Action row | Horizontal **Know/Show**, **Dictionary**, and **Cancel** buttons. |
+```text
+[A1] (noun): regular definition
+```
 
-A sense row displays the CEFR level, parenthesized part of speech, and gloss. The current KOReader Button widget supports one face and one bold state per button. Therefore, the implementation keeps the row visually prominent and uses the requested `(noun)` / `(verb)` form; true mixed bold/italic spans require a custom row widget and should be implemented separately if exact typography is required.
+CEFR dùng `bold = true`, POS dùng face `NotoSans-Italic.ttf` và nằm trong ngoặc đơn, còn definition dùng `infofont` regular. Không dùng một Button label duy nhất cho row vì Button chuẩn không biểu diễn được đúng các face hỗn hợp này.
 
-Selecting an alternative sense stores its stable `sense_key` by lemma and repaints the page. Pressing **Know** stores the lemma as known and hides every sense and inflected occurrence of that lemma. Pressing **Show** removes the lemma from the known-word set. **Dictionary** calls KOReader's standard dictionary lookup for the underlying surface word rather than introducing a second dictionary UI.
+Khi chuyển trang, dialog gọi `self:free()` để giải phóng đệ quy cây widget hiện tại, xóa root references rồi build lại content, page controls và root container. Đây là pattern tương tự reinit của KOReader `ButtonDialog`/`ConfirmBox` và tránh orphaned TextWidget, SenseRow, ButtonTable hoặc tài nguyên native.
 
-## 9. Persistent user state
+Dialog có các hành vi đóng sau:
 
-User state must not be stored inside `wordwise.koplugin`, because a plugin update commonly replaces that directory. The current paths are:
+| Tình huống | Kết quả |
+| --- | --- |
+| Cancel | Đóng popup |
+| Back/Home | Đóng popup qua `onClose()` |
+| Tap ngoài popup | Đóng popup và không truyền gesture tiếp |
+| Tap ngoài hint trước khi popup mở | Không consume, giữ page-turn behavior |
+| Chọn SenseRow | Lưu `sense_key`, repaint và đóng popup |
+| Dictionary | Đóng popup rồi gọi dictionary chuẩn của KOReader |
+
+`closeDialog()` có guard để owner reference chỉ được xóa một lần. Các hàm `onShow`, `onCloseWidget` và `onTapClose` phải chỉ dùng `self.movable.dimen` khi widget còn hợp lệ.
+
+## 10. Persistent user state
+
+Không lưu state bên trong `wordwise.koplugin`, vì OTA sẽ thay thế thư mục này. Các file hiện tại là:
 
 ```text
 <KOReader data directory>/wordwise/known_words.lua
 <KOReader data directory>/wordwise/state.lua
 ```
 
-`known_words.lua` stores a table under `words`, keyed by normalized lemma. `state.lua` stores selected sense keys under `selected_senses`. The files are opened with KOReader's `LuaSettings` module, which provides `open`, `saveSetting`, and `flush` operations.[3]
+`known_words.lua` chứa table `words`, được index theo lemma đã normalize. `state.lua` chứa `selected_senses`. Runtime sử dụng `LuaSettings` để open, save setting và flush các file state.[2]
 
-The plugin includes a menu action named **Known words file** that displays the exact path on the device. This is useful for backup, troubleshooting, and migration. An updater must never purge or replace the KOReader data directory.
+| Hành động | Tác động |
+| --- | --- |
+| Know | Đánh dấu toàn bộ lemma đã biết, ẩn mọi sense và occurrence quy về lemma đó |
+| Show | Xóa lemma khỏi known-word set |
+| Chọn sense | Lưu `sense_key` theo lemma |
+| OTA/plugin replacement | Không đụng đến hai file state hoặc database người dùng |
 
-If the schema of user state changes, use a version field and a one-time migration rather than silently discarding old data:
+Nếu schema state thay đổi, thêm version và migration một lần. Không âm thầm xóa state cũ:
 
 ```lua
 state_version = 2
@@ -222,187 +251,200 @@ known_words = { ... }
 selected_senses = { ... }
 ```
 
-## 10. Local development
+Menu **Known words file** phải tiếp tục hiển thị path thực tế trên thiết bị để hỗ trợ backup và troubleshooting.
 
-The project can be edited on a normal Linux workstation or in the sandbox. LuaJIT is the actual KOReader runtime; if a Lua executable is unavailable, the repository's syntax checks use the Python `luaparser` package as a syntax-level fallback.
+## 11. Hiệu năng và memory safety
 
-Install the development-only Python dependencies if needed:
+Các quy tắc dưới đây là bắt buộc khi sửa runtime:
+
+| Khu vực | Quy tắc |
+| --- | --- |
+| SQLite | Một connection và prepared statement cho mỗi plugin/document lifecycle; phải đóng khi document đóng |
+| Lookup cache | FIFO bounded ở 1.024 surface forms; phải clear khi database đóng |
+| Page hints | Chỉ giữ hints của trang hiện tại; thay thế ở đầu mỗi lần recompute |
+| Refresh | Gộp PageUpdate, PosUpdate và rerender vào một `nextTick` |
+| Callback cũ | Dùng lifecycle generation để callback sau khi document đóng trở thành no-op |
+| Popup page turn | `self:free()` cây widget cũ trước khi build trang mới |
+| Close document | Clear hints, đóng dialog, flush state, đóng SQLite và invalidate DB path |
+| Render allocation | Tái sử dụng measurement/hitbox data trong current-page hints, tránh tạo table tạm không cần thiết |
+
+Các biện pháp này loại bỏ các nguồn retain không giới hạn rõ ràng ở cấp source, nhưng **không thể chứng minh tuyệt đối** rằng mọi thiết bị Android đều ổn định trong mọi điều kiện. Cần stress test thực tế với sách dài, nhiều nghìn từ khác nhau và chuyển trang liên tục tối thiểu 10–15 phút.
+
+## 12. OTA update contract
+
+OTA chỉ lấy public GitHub Release của repository:
+
+```text
+Repository: https://github.com/trigon1998/wordwise.koplugin
+Latest API: https://api.github.com/repos/trigon1998/wordwise.koplugin/releases/latest
+ZIP asset: wordwise.koplugin.zip
+Checksum: wordwise.koplugin.zip.sha256
+```
+
+Luồng cài đặt là:
+
+```text
+User chọn Check for updates
+        │
+        ▼
+GET latest GitHub Release qua HTTPS
+        │
+        ├── đọc tag/version
+        ├── so sánh với version đang cài
+        └── tìm đúng ZIP asset
+        │
+        ▼
+Hỏi xác nhận trước khi tải/cài
+        │
+        ▼
+Tải vào data/wordwise/ota/
+        │
+        ▼
+Kiểm tra root directory và required files
+        │
+        ▼
+Extract vào staging directory
+        │
+        ▼
+Swap plugin directory có backup/rollback
+        │
+        ▼
+Thông báo restart KOReader
+```
+
+Updater phải từ chối release nếu tag không phải semantic version, asset sai tên, archive thiếu file bắt buộc, archive có path traversal, response không qua HTTPS hoặc swap không thể rollback. Không cài branch archive đang thay đổi.
+
+Asset phải có root duy nhất là `wordwise.koplugin/` và tối thiểu gồm `main.lua`, `_meta.lua`, `wordwise_db.lua`, `wordwise_hint_dialog.lua` và `wordwise.db`. Dữ liệu người dùng dưới `<KOReader data directory>/wordwise/` không được nằm trong ZIP và không được bị updater xóa.
+
+Network code sử dụng timeout-aware sinks của KOReader `socketutil`. Các lỗi tạm thời như `wantread`, timeout và sink timeout được retry hữu hạn; lỗi vĩnh viễn phải hiện thông báo có thể thử lại thay vì raw transport error. Hành vi LuaSec vẫn cần được kiểm tra trên bản KOReader Android đích.
+
+## 13. Thống kê lượt tải và biểu đồ README
+
+README hiển thị `download-stats.svg` ở cuối trang. Script `tools/update_download_chart.py` gọi GitHub Releases API, bỏ qua draft/prerelease và chỉ đếm asset có tên chính xác `wordwise.koplugin.zip`. File `.sha256` không được tính vì nó là asset xác minh, không phải gói cài đặt.
+
+Script ghi hai output ổn định:
+
+```text
+download-stats.json   # release, published_at, downloads, cumulative_downloads
+download-stats.svg    # biểu đồ cột theo release và đường lũy kế
+```
+
+Chạy thủ công:
+
+```sh
+python3 tools/update_download_chart.py
+```
+
+Workflow `.github/workflows/update-download-stats.yml` chạy mỗi tuần và có `workflow_dispatch`. Workflow chỉ commit khi JSON/SVG thay đổi, vì vậy không tạo commit mới nếu số lượt tải không đổi. GitHub Releases API cung cấp bộ đếm theo asset, không phải lịch sử tải theo từng ngày; biểu đồ vì thế mô tả downloads per release và cumulative total.[3]
+
+Khi thêm release mới, không sửa tay số trong SVG. Hãy chạy script sau khi asset đã được publish để lấy số liệu thật từ GitHub.
+
+## 14. Thiết lập môi trường phát triển
+
+Project được chạy thực tế bằng LuaJIT bên trong KOReader. Nếu workstation không có LuaJIT/KOReader đầy đủ, repository dùng `luaparser` để kiểm tra cú pháp ở mức parser:
 
 ```sh
 sudo pip3 install luaparser
 ```
 
-Run the validation suite from the repository root:
+Chạy từ root repository:
 
 ```sh
 python3 /home/ubuntu/check_lua_syntax.py
 python3 tests/test_cefr.py
-python3 -m py_compile tools/build_cefr_dict.py tools/build_cefr_wordnet_dict.py
+python3 -m py_compile tools/*.py
+python3 tools/update_download_chart.py
 ```
 
-The tests currently cover Lua syntax, Python syntax, CEFR schema, all six CEFR levels, multi-sense coverage, absence of Kindle/Amazon runtime references, durable known-word storage, selected-sense filtering, fixed popup rows, truncation, below-word fallback, collision-layout guards, bounded dictionary caching, and refresh coalescing.
+`check_lua_syntax.py` phải bao gồm mọi Lua module có thể load ở runtime, đặc biệt là `wordwise_hint_dialog.lua`. Không dùng Python compile như bằng chứng rằng Lua runtime behavior đã đúng.
 
-## 10.1 Performance and memory-safety rules
+Regression suite hiện kiểm tra schema và sáu CEFR levels, multi-sense coverage, không có Kindle/Amazon runtime reference, known-word persistence, selected-sense exclusion, pagination, fixed footer, equal row height, CEFR bold, POS italic, regular definition, truncation, collision guards, bounded cache, refresh coalescing, OTA contract và cleanup status.
 
-The dictionary connection and prepared statement are opened once per plugin instance and closed in `onCloseDocument`. Lookup results are cached in memory for speed, but the cache is capped at 1,024 surface forms with bounded FIFO eviction. This prevents a long reading session across many unique words from retaining an unbounded number of sense tables. The cache is also cleared when the database closes.
+## 15. Ma trận kiểm thử Android
 
-Page hints are stored only for the current visible page and are replaced at the start of every recomputation. Page-update, position-update, and rerender notifications are coalesced into one `nextTick` refresh. A lifecycle generation guard makes an already queued callback harmless if the document closes before the callback executes. The close hook clears hints, closes any open Word Wise dialog, flushes user state, closes SQLite resources, and invalidates the database path.
+Static tests không thay thế manual test trên thiết bị. Mỗi release nên kiểm tra ít nhất các trường hợp sau:
 
-These controls remove the main source-level unbounded-retention and duplicate-work risks, but they cannot prove that every Android device remains stable under sustained paging. A device stress test should collect KOReader's log and memory information while turning pages continuously for at least 10–15 minutes, with a large book, several thousand unique words, and Word Wise enabled. Watch for a monotonic resident-memory increase after garbage-collection cycles, repeated SQLite errors, stale overlays after document close, and touch or page-turn latency.
+| Kiểm thử | Kết quả mong đợi |
+| --- | --- |
+| Mở EPUB và bật Word Wise | Hint xuất hiện, nội dung sách không bị sửa |
+| Mở PDF/fixed-layout | Plugin không chạy overlay unsafe hoặc giữ trạng thái unavailable |
+| Hint sát mép trên | Hint chuyển xuống dưới và vẫn nhìn thấy đầy đủ |
+| Nhiều hint dài trên một dòng | Không chồng lấn; hint ưu tiên thấp có thể bị bỏ |
+| Chạm hint bị truncate | Popup hiển thị definition đầy đủ |
+| Từ có nhiều sense | Popup có Previous/Next và footer luôn nhìn thấy |
+| Trang cuối ít sense hơn | Viewport/footer không nhảy sai vị trí |
+| Chọn sense ở trang sau | Sense đã chọn xuất hiện ở occurrence tiếp theo |
+| Kiểm tra typography | CEFR chỉ bold, POS italic trong ngoặc, definition regular |
+| Nhấn Know | Toàn bộ lemma và dạng biến cách liên quan biến mất |
+| Nhấn Show | Hint của lemma có thể được khôi phục |
+| Nhấn Dictionary | Dictionary chuẩn của KOReader mở đúng surface word |
+| Nhấn Cancel/Back/tap ngoài | Popup đóng đúng một lần |
+| Restart KOReader | Known words và selected senses vẫn còn |
+| Thay thư mục plugin | User state và database người dùng vẫn còn |
+| Chuyển trang liên tục 10–15 phút | Không có memory growth bất thường, stale overlay hoặc latency tăng dần |
+| OTA từ bản cũ | ZIP được xác minh, plugin thay thế, state không bị mất |
 
-Static checks are necessary but not sufficient. Before release, install the plugin on an Android device and test at least:
+Khi stress test, nên lưu KOReader log, version thiết bị, version KOReader, loại sách, CEFR threshold và số lượng unique words. Cần chú ý resident-memory có tăng đơn điệu sau các chu kỳ GC hay không, SQLite errors, stale callback sau document close và page-turn latency.
 
-| Manual test | Expected result |
-|---|---|
-| Open an EPUB and enable Word Wise | Hints appear without modifying the book. |
-| Open a PDF | Plugin remains unavailable or does not attempt unsafe overlay work. |
-| Hint at the top edge | Hint moves below the word and remains visible. |
-| Several long hints on one line | Hints do not overlap; low-priority hints may be omitted. |
-| Tap a long truncated hint | Popup title shows the full definition. |
-| Select another sense | The chosen sense appears on future occurrences. |
-| Press Know | All senses and inflected forms of the lemma disappear. |
-| Restart KOReader | Known words and selected senses remain. |
-| Replace the plugin directory | User state remains in the data directory. |
-| Tap outside a hint | Normal Android page-turn behavior remains available. |
-| Open Dictionary | KOReader's own dictionary popup appears. |
+## 16. Troubleshooting
 
-## 11. OTA update contract
+Nếu plugin không xuất hiện, kiểm tra tên thư mục có đúng `wordwise.koplugin`, `main.lua` có nằm trực tiếp bên trong và thư mục có nằm trong `koreader/plugins/` hay không. Sau khi thay plugin, restart KOReader hoàn toàn.
 
-The updater is designed for the public fork:
+Nếu không có hint, xác nhận tài liệu là reflowable, Word Wise đã bật cho book hiện tại và database tồn tại tại bundled path hoặc `<KOReader data directory>/wordwise/wordwise.db`. Dùng menu **Known words file** để tìm data directory.
 
-```text
-Repository: https://github.com/trigon1998/wordwise.koplugin
-Release API: https://api.github.com/repos/trigon1998/wordwise.koplugin/releases/latest
-Asset: wordwise.koplugin.zip
-```
+Nếu user database bị bỏ qua, kiểm tra schema, tên file và vị trí. Runtime chấp nhận schema CEFR có `cefr_level` hoặc compatibility schema cũ có `difficulty`, nhưng SQLite được mở read-only và lỗi schema sẽ không tự được sửa.
 
-The updater must use GitHub **Releases**, not the moving `main` branch, as the installation source. A release is an immutable, reviewable version boundary. The updater should perform the following sequence:
+Nếu popup có vấn đề, kiểm tra `wordwise_hint_dialog.lua`, đặc biệt là `page_size`, `content_viewport`, `action_table`, `onTapClose`, `onClose`, `self:free()` trước rebuild và dirty region dùng `self.movable.dimen` hiện tại. Không đưa trở lại `ButtonDialog` scroll toàn bộ nếu yêu cầu footer cố định vẫn còn hiệu lực.
 
-```text
-User selects Check for updates
-        │
-        ▼
-Request latest public GitHub release over HTTPS
-        │
-        ├── parse tag_name / version
-        ├── compare with installed version
-        └── locate the exact ZIP asset
-        │
-        ▼
-Ask the user before downloading/installing
-        │
-        ▼
-Download to KOReader data/wordwise/ota/
-        │
-        ▼
-Validate ZIP structure and required files
-        │
-        ▼
-Extract beside the active plugin into a temporary directory
-        │
-        ▼
-Atomically swap plugin directories with rollback available
-        │
-        ▼
-Tell the user to restart KOReader
-```
+Nếu OTA báo không có release, push lên `main` là chưa đủ. Phải có GitHub Release public với tag semantic version và đúng hai asset `wordwise.koplugin.zip` cùng `wordwise.koplugin.zip.sha256`.
 
-The updater must not silently install an arbitrary branch archive. It should reject a release when:
+Nếu biểu đồ chưa cập nhật, chạy workflow **Update download statistics** thủ công hoặc chạy `python3 tools/update_download_chart.py` rồi kiểm tra `download-stats.json`. Chỉ asset ZIP cài đặt được tính vào số liệu.
 
-- the release is a draft or prerelease unless the user explicitly enables prereleases;
-- `tag_name` is not a supported semantic version;
-- the asset name is not the expected plugin ZIP;
-- the ZIP does not contain a single root directory named `wordwise.koplugin`;
-- required files such as `main.lua`, `_meta.lua`, `wordwise_db.lua`, and `wordwise.db` are missing;
-- an archive path contains `..`, an absolute path, or another path traversal pattern;
-- the download is not HTTPS or returns an unexpected HTTP status; or
-- the replacement cannot be completed with a rollback path.
+## 17. Quy trình release
 
-The updater must preserve:
+Một release mới nên được thực hiện theo thứ tự sau:
 
-```text
-<KOReader data directory>/wordwise/known_words.lua
-<KOReader data directory>/wordwise/state.lua
-<KOReader data directory>/wordwise/wordwise.db
-```
+1. Cập nhật version trong `_meta.lua` và `wordwise_ota.lua`.
+2. Cập nhật README/developer documentation và release notes nếu hành vi người dùng thay đổi.
+3. Rebuild `wordwise.db` từ các source đã ghi nhận nếu database thay đổi.
+4. Chạy Lua parser, Python regression, Python compile và `git diff --check`.
+5. Kiểm thử Android thực tế, bao gồm popup nhiều trang, footer, OTA và memory stress.
+6. Commit và push branch chính.
+7. Tạo ZIP với root chính xác `wordwise.koplugin/`.
+8. Tạo checksum SHA-256.
+9. Tạo GitHub Release với đúng tag và hai asset OTA.
+10. Test OTA từ một bản cài cũ và xác nhận `known_words.lua`, `state.lua` cùng user database không bị thay đổi.
+11. Chạy workflow cập nhật thống kê sau khi release đã public.
 
-The user database must not be overwritten by an OTA package. The bundled database inside the plugin may change with a release, but a user-supplied database in the data directory always remains authoritative.
-
-A release should include a SHA-256 checksum asset or a release-body checksum. If checksum verification is not yet implemented, the UI must describe the updater as a convenience updater rather than a cryptographically verified updater. The preferred long-term design is to publish both:
-
-```text
-wordwise.koplugin.zip
-wordwise.koplugin.zip.sha256
-```
-
-The updater uses KOReader's `socketutil` timeout-aware table and file sinks rather than raw LuaSocket sinks. GitHub asset downloads use the file-download timeout profile, while release metadata uses the large-content profile. Transient LuaSec errors such as `wantread`, `timeout`, and `sink timeout` are retried a bounded number of times; a permanent failure is reported as a retryable network message rather than exposing a raw transport error. The updater must still be tested on the target Android build because network behavior depends on the bundled LuaSec version and device connection.
-
-The first public OTA release should be created only after the updater itself has been merged and manually tested from a clean installation.
-
-## 12. Release procedure
-
-Use a semantic version tag such as `v0.2.0`. The release checklist is:
-
-1. Update the plugin version constant and user-facing changelog.
-2. Rebuild `wordwise.db` from the recorded open sources.
-3. Run Lua, Python, database, and static regression checks.
-4. Install and test on Android with an EPUB.
-5. Create a ZIP whose root is exactly `wordwise.koplugin/`.
-6. Generate a SHA-256 checksum for the ZIP.
-7. Create a GitHub Release on `trigon1998/wordwise.koplugin` with the tag and both assets.
-8. Download the release asset using the OTA menu from an older installation.
-9. Confirm that the plugin updates and that `known_words.lua`, `state.lua`, and a user database remain intact.
-10. Confirm that the new installation is clean and that no temporary OTA directory is left behind.
-
-Example packaging command:
+Ví dụ đóng gói:
 
 ```sh
-git archive --format=zip --prefix=wordwise.koplugin/ \\
+git archive --format=zip --prefix=wordwise.koplugin/ \
   --output=wordwise.koplugin.zip HEAD
 sha256sum wordwise.koplugin.zip > wordwise.koplugin.zip.sha256
 ```
 
-Example GitHub release command:
+Ví dụ tạo release:
 
 ```sh
-gh release create v0.2.0 \\
-  wordwise.koplugin.zip \\
-  wordwise.koplugin.zip.sha256 \\
-  --repo trigon1998/wordwise.koplugin \\
-  --title "Word Wise v0.2.0" \\
-  --notes-file CHANGELOG.md
+gh release create v0.2.6 \
+  wordwise.koplugin.zip \
+  wordwise.koplugin.zip.sha256 \
+  --repo trigon1998/wordwise.koplugin \
+  --title "Word Wise v0.2.6" \
+  --notes-file RELEASE_NOTES.md
 ```
 
-## 13. Troubleshooting
+## 18. License và attribution
 
-If the plugin does not appear, verify that the directory is named `wordwise.koplugin`, that `main.lua` is directly inside it, and that it is located under KOReader's `plugins` directory. Restart KOReader completely after replacing a plugin.
+Repository phải giữ attribution cho upstream plugin và từng nguồn dictionary. CEFR-J, Octanove và WordNet có thể có điều khoản khác nhau; trước khi redistribute cần kiểm tra license text đi kèm từng source. Không đưa Kindle/Amazon corpus vào public fork nếu chưa có quyền phân phối phù hợp.
 
-If no hints appear, confirm that the document is reflowable, Word Wise is enabled in the current book, and a database exists either at the bundled path or at `<KOReader data directory>/wordwise/wordwise.db`. Use **Known words file** to inspect the data directory path.
-
-If a user database appears to be ignored, verify its schema, close and reopen KOReader, and check that it is not named with an unsupported extension or placed in the plugin directory. The runtime opens SQLite read-only and rejects a schema that has neither `cefr_level` nor the legacy `difficulty` column.
-
-If an OTA update reports that no release exists, the repository may not yet have a GitHub Release. A push to `main` alone is not sufficient for the release-based updater. Create a public release with the expected ZIP asset before testing OTA.
-
-## 14. Data and licensing notes
-
-The project should retain attribution for the upstream plugin and every bundled dictionary source. CEFR profiles and WordNet data may have different licenses and attribution requirements; check the exact license text distributed with each source before redistribution. Kindle/Amazon-derived corpus data must not be included in the public fork without explicit permission and an appropriate redistribution right.
-
-This guide provides engineering guidance, not legal advice. When the upstream repository does not expose a clear license, obtain permission from the original author before distributing modified upstream code or assets.
+Tài liệu này là hướng dẫn kỹ thuật, không phải tư vấn pháp lý. Vì upstream có thể không công bố license rõ ràng, nên cần làm rõ quyền sử dụng với tác giả upstream trước khi phân phối code hoặc asset sửa đổi.
 
 ## References
 
 [1]: https://koreader.rocks/doc/topics/Development_guide.md.html "KOReader Development Guide"
-[2]: https://github.com/koreader/koreader/blob/master/frontend/apps/reader/modules/readerhighlight.lua "KOReader ReaderHighlight source and touch precedent"
-[3]: https://koreader.rocks/doc/modules/luasettings.html "KOReader LuaSettings documentation"
-[4]: https://github.com/openlanguageprofiles/olp-en-cefrj "CEFR-J English vocabulary profiles"
-[5]: https://github.com/asxelot/wordwise.koplugin "Upstream Word Wise plugin"
-
-## 10.2 Paginated sense popup and mixed typography
-
-The Word Wise sense dialog uses `wordwise_hint_dialog.lua` rather than ButtonDialog's whole-table scrolling behavior. The header, page controls, fixed-height content viewport, and horizontal action footer are separate regions. This keeps **Know/Show**, **Dictionary**, and **Cancel** visible on every page while alternative senses are navigated with previous/next page controls.
-
-The selected sense is excluded from the alternatives list. Each page contains a bounded number of fixed-height rows, so a long sense list cannot push the action footer outside the dialog. The page indicator is disabled and has a no-op callback because ButtonTable wraps button callbacks without checking for nil callbacks.
-
-Each sense row is a tappable InputContainer composed of separate text widgets: CEFR uses a bold face, the part of speech uses `NotoSans-Italic.ttf` inside parentheses, and the definition uses the regular info face. This avoids making the entire definition bold and avoids relying on unsupported mixed-style labels in a standard Button.
-
-The pagination layer does not use a free-scrolling content container. On small screens it reduces the number of rows per page to preserve the fixed footer. Manual Android testing must verify that the page controls, row taps, fixed footer, and Back/tap-close behavior remain usable on the KOReader version being targeted.
+[2]: https://koreader.rocks/doc/modules/luasettings.html "KOReader LuaSettings documentation"
+[3]: https://docs.github.com/en/rest/releases/releases "GitHub REST API — Releases"
+[4]: https://github.com/asxelot/wordwise.koplugin "Upstream Word Wise plugin"
+[5]: https://github.com/openlanguageprofiles/olp-en-cefrj "CEFR-J vocabulary profiles"
