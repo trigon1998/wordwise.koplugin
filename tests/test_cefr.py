@@ -54,7 +54,26 @@ assert 'bold = true' in dialog
 assert 'NotoSans-Italic.ttf' in dialog
 assert 'height_overflow_show_ellipsis = true' in dialog
 assert 'function SenseRow:onTap()' in dialog
+assert 'local BD = require("ui/bidi")' in dialog
+assert 'getArrowLabels' in dialog
+assert 'dialog_frame' in dialog and 'self[1] = CenterContainer' in dialog
+assert 'local MovableContainer' not in dialog
+assert 'self.movable' not in dialog
+assert 'alpha =' not in dialog
+assert 'ges = "hold"' not in dialog
+assert 'ges = "hold_pan"' not in dialog
+assert 'ges = "pan"' not in dialog
+assert 'ges = "swipe"' not in dialog
 print('popup_pagination_and_mixed_style_guards_ok')
+assert 'local TextViewer = require("ui/widget/textviewer")' in main
+assert 'function WordWise:getDiagnosticsText()' in main
+assert 'function WordWise:showDeveloperDiagnostics()' in main
+assert 'developer_diagnostics' in main
+assert 'gesture_mode=static_popup' in main
+assert 'popup_alpha=1.0' in main
+assert 'movable_behavior=disabled' in main
+assert 'credentials=not included' in main
+print('developer_diagnostics_guards_ok')
 ota = (ROOT / 'wordwise_ota.lua').read_text()
 assert 'trigon1998' in ota and 'wordwise.koplugin' in ota
 assert 'releases/latest' in ota and 'wordwise.koplugin.zip' in ota

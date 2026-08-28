@@ -152,6 +152,7 @@ return {
         show_short = "Show",
         known_words_menu = "Known words file",
         known_words_file = "Known words are saved in:\n%1",
+        developer_diagnostics = "Developer diagnostics",
         check_update = "Check for updates",
         checking_update = "Checking for Word Wise updates…",
         update_available = "A new Word Wise version is available.\nInstalled: %1\nAvailable: %2\n\nDownload and install it now?",

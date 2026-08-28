@@ -1,4 +1,5 @@
 local Blitbuffer = require("ffi/blitbuffer")
+local BD = require("ui/bidi")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local Device = require("device")
 local Font = require("ui/font")
@@ -8,7 +9,6 @@ local GestureRange = require("ui/gesturerange")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local LineWidget = require("ui/widget/linewidget")
-local MovableContainer = require("ui/widget/container/movablecontainer")
 local Size = require("ui/size")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
@@ -156,7 +156,7 @@ function HintDialog:setPage(page)
     if page == self.page then return end
     self.page = page
     self:_rebuildContent()
-    UIManager:setDirty(self, function() return "ui", self.movable.dimen end)
+    UIManager:setDirty(self, function() return "ui", self.dialog_frame.dimen end)
 end
 
 function HintDialog:_makeContent()
@@ -194,11 +194,14 @@ function HintDialog:_makeContent()
 end
 
 function HintDialog:_makePageControls()
+    local label_prev, label_next = BD.getArrowLabels()
+    self.arrow_prev = label_prev or self.owner:tr("previous")
+    self.arrow_next = label_next or self.owner:tr("next")
     return ButtonTable:new{
         width = self.inner_width,
         buttons = {{
             {
-                text = self.owner:tr("previous"),
+                text = self.arrow_prev,
                 width = Screen:scaleBySize(52),
                 height = PAGE_BUTTON_HEIGHT,
                 enabled = self.page > 1,
@@ -211,7 +214,7 @@ function HintDialog:_makePageControls()
                 callback = function() end,
             },
             {
-                text = self.owner:tr("next"),
+                text = self.arrow_next,
                 width = Screen:scaleBySize(52),
                 height = PAGE_BUTTON_HEIGHT,
                 enabled = self.page < self.page_count,
@@ -285,7 +288,7 @@ function HintDialog:_rebuildContent()
     -- ButtonTables release their native resources instead of becoming orphans.
     self:free()
     self[1] = nil
-    self.movable = nil
+    self.dialog_frame = nil
     self.title_widget = nil
     self.page_controls = nil
     self.content_viewport = nil
@@ -307,41 +310,44 @@ function HintDialog:_assemble()
         dimen = Geom:new{w = self.inner_width, h = Size.line.medium},
     })
     table.insert(body, self.action_table)
-    self.movable = MovableContainer:new{
-        FrameContainer:new{
-            background = Blitbuffer.COLOR_WHITE,
-            bordersize = Size.border.window,
-            radius = Size.radius.window,
-            padding = Size.padding.button,
-            padding_top = 0,
-            padding_bottom = 0,
-            body,
-        }
+    -- Keep the popup static. MovableContainer's default hold/hold_pan behavior
+    -- changes alpha and moved offsets, which is not wanted for this dialog.
+    self.dialog_frame = FrameContainer:new{
+        background = Blitbuffer.COLOR_WHITE,
+        bordersize = Size.border.window,
+        radius = Size.radius.window,
+        padding = Size.padding.button,
+        padding_top = 0,
+        padding_bottom = 0,
+        body,
     }
     self[1] = CenterContainer:new{
         dimen = Screen:getSize(),
-        self.movable,
+        self.dialog_frame,
     }
 end
 
 function HintDialog:onShow()
     UIManager:setDirty(self, function()
-        return "ui", self.movable.dimen
+        return "ui", self.dialog_frame.dimen
     end)
 end
 
 function HintDialog:onCloseWidget()
-    if self.movable and self.movable.dimen then
+    if self.dialog_frame and self.dialog_frame.dimen then
         UIManager:setDirty(nil, function()
-            return "ui", self.movable.dimen
+            return "ui", self.dialog_frame.dimen
         end)
     end
 end
 
 function HintDialog:onTapClose(_, ges)
-    if self.movable and ges.pos:notIntersectWith(self.movable.dimen) then
+    if self.dialog_frame and ges and ges.pos
+            and ges.pos:notIntersectWith(self.dialog_frame.dimen) then
         self:onClose()
     end
+    -- Only the tap-close event is consumed. Hold/pan/swipe are deliberately
+    -- not registered here, so they cannot dim or move the popup.
     return true
 end
 

@@ -31,6 +31,7 @@ Word Wise is an Android-focused fork of [`asxelot/wordwise.koplugin`](https://gi
 | **Persistent state** | Known words and selected senses survive plugin updates. |
 | **GitHub OTA updates** | Check and install validated releases from inside KOReader. |
 | **Android performance** | Bounded lookup cache, coalesced refreshes, lifecycle guards, and popup widget cleanup. |
+| **Developer diagnostics** | View a copyable runtime report covering the plugin, document, database, popup, state, OTA, and lifecycle. |
 
 ## Installation
 
@@ -74,6 +75,10 @@ Each alternative row has the same height. The row format is:
 ```text
 A1 (noun): regular definition
 ```
+
+### Developer diagnostics
+
+Open **Developer diagnostics** from the Word Wise settings to view a copyable plain-text report for bug reports. It includes runtime, screen, document, CEFR, database, popup, state, OTA, and lifecycle information without including book content, credentials, or the values of known words.
 
 ### Know, Show, and Dictionary
 

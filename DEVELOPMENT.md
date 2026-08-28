@@ -212,6 +212,10 @@ CEFR dùng `bold = true`, POS dùng face `NotoSans-Italic.ttf` và nằm trong n
 
 Khi chuyển trang, dialog gọi `self:free()` để giải phóng đệ quy cây widget hiện tại, xóa root references rồi build lại content, page controls và root container. Đây là pattern tương tự reinit của KOReader `ButtonDialog`/`ConfirmBox` và tránh orphaned TextWidget, SenseRow, ButtonTable hoặc tài nguyên native.
 
+Popup là container tĩnh, không dùng `MovableContainer` và không đăng ký hold/pan/swipe để di chuyển hoặc đổi alpha. Vì vậy hold và swipe trong popup được cố ý bỏ qua; popup giữ nguyên vị trí và opacity, còn swipe bắt đầu ngoài popup vẫn để ReaderView xử lý.
+
+Page controls dùng arrow labels theo convention của KOReader khi API có sẵn, với Previous ở trái, indicator ở giữa và Next ở phải. Indicator là nút no-op; Previous/Next bị disable đúng ở đầu/cuối danh sách.
+
 Dialog có các hành vi đóng sau:
 
 | Tình huống | Kết quả |
@@ -223,7 +227,7 @@ Dialog có các hành vi đóng sau:
 | Chọn SenseRow | Lưu `sense_key`, repaint và đóng popup |
 | Dictionary | Đóng popup rồi gọi dictionary chuẩn của KOReader |
 
-`closeDialog()` có guard để owner reference chỉ được xóa một lần. Các hàm `onShow`, `onCloseWidget` và `onTapClose` phải chỉ dùng `self.movable.dimen` khi widget còn hợp lệ.
+`closeDialog()` có guard để owner reference chỉ được xóa một lần. Các hàm `onShow`, `onCloseWidget` và `onTapClose` phải chỉ dùng `self.dialog_frame.dimen` khi widget còn hợp lệ.
 
 ## 10. Persistent user state
 
@@ -252,6 +256,14 @@ selected_senses = { ... }
 ```
 
 Menu **Known words file** phải tiếp tục hiển thị path thực tế trên thiết bị để hỗ trợ backup và troubleshooting.
+
+## 10.1 Developer Diagnostics
+
+Menu **Developer diagnostics** trong phần Word Wise settings mở một `TextViewer` với báo cáo plain-text có thể chọn và copy. Báo cáo được tạo tại thời điểm mở, không tạo lookup mới, không chạy lại toàn bộ trang và không gửi network request.
+
+Diagnostics bao gồm plugin version/repository, Lua/KOReader runtime nếu API có sẵn, screen metrics, document support/enabled state, CEFR và font configuration, database source/schema/cache, popup page geometry và static gesture mode, state counts/path placeholders, lifecycle flags và OTA status. API tùy chọn được bảo vệ bằng capability check hoặc `pcall`; giá trị không có được ghi là `unavailable`.
+
+Báo cáo không chứa book content, gloss dump, known-word values, password, cookie, access token hoặc credential. Khi cần report lỗi, người dùng nên gửi toàn bộ diagnostics cùng KOReader version, Android device, bước tái hiện và log liên quan.
 
 ## 11. Hiệu năng và memory safety
 
