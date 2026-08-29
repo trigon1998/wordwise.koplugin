@@ -32,22 +32,27 @@ main = (ROOT / 'main.lua').read_text()
 assert 'truncateTextByWidth' in main
 assert 'below_baseline' in main and 'below_top' in main
 assert 'hit_box' in main
-assert 'align = "left"' in main
-assert 'dictionary_short' in main and 'know_short' in main
 assert 'screen_h' in main
 print('ui_layout_guards_ok')
 assert 'KNOWN_WORDS_PATH' in main
 assert 'known_words.lua' in main
 assert 'function WordWise:isWordKnown(entry)' in main
 assert 'iv[2] + GLOSS_HGAP' in main
-assert 'pos .. ")"' in main
 print('known_storage_and_overlap_guards_ok')
-assert 'local current_key = current_entry and current_entry.sense_key' in main
-assert 'local is_current = current_key and entry.sense_key == current_key' in main
-assert 'SENSE_ROW_HEIGHT' in main
-assert 'height = SENSE_ROW_HEIGHT' in main
-assert 'avoid_text_truncation = true' in main
-print('popup_duplicate_and_uniform_row_guards_ok')
+dialog = (ROOT / 'wordwise_hint_dialog.lua').read_text()
+assert 'align = "left"' in dialog
+assert 'pos' in dialog and '"): "' in dialog
+assert 'dictionary_short' in dialog and 'know_short' in dialog
+assert 'WordWiseHintDialog' in main
+assert 'self.owner:setSelectedSense(selected)' in dialog
+assert 'local is_current = current_key and entry.sense_key == current_key' in dialog
+assert 'selected = current_key and entry.sense_key == current_key or false' in dialog
+assert 'bold = self.selected' in dialog
+assert 'local label_prev, label_next = "‹", "›"' in dialog
+assert 'Page %1 of %2' in (ROOT / 'wordwise_l10n.lua').read_text()
+assert 'font_bold = false' in dialog
+assert 'height = self.row_height' in dialog
+print('popup_selection_style_and_navigation_guards_ok')
 ota = (ROOT / 'wordwise_ota.lua').read_text()
 assert 'trigon1998' in ota and 'wordwise.koplugin' in ota
 assert 'releases/latest' in ota and 'wordwise.koplugin.zip' in ota
