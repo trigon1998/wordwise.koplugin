@@ -232,6 +232,10 @@ function WordWise:init()
     if self.ui.view then
         self.ui.view:registerViewModule("wordwise", self.overlay)
     end
+    -- Some KOReader Android builds do not deliver ReaderReady consistently to
+    -- plugins. Register the hint tap zone during init as well, while keeping
+    -- the ReaderReady call as an idempotent fallback.
+    self:setupTouchZones()
     self:registerDictButtons()
 end
 
