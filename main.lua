@@ -27,6 +27,7 @@ local WordWiseHintDialog = require("wordwise_hint_dialog")
 local RenderText = require("ui/rendertext")
 local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
+local logger = require("logger")
 local Screen = require("device").screen
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
@@ -524,16 +525,25 @@ function WordWise:setSelectedSense(entry)
 end
 
 function WordWise:showHintActions(hint)
-    self._hint_dialog = WordWiseHintDialog:new{
+    if self._hint_dialog then
+        UIManager:close(self._hint_dialog)
+        self._hint_dialog = nil
+    end
+    local ok, dialog = pcall(WordWiseHintDialog.new, WordWiseHintDialog, {
         owner = self,
         hint = hint,
-    }
-    UIManager:show(self._hint_dialog)
+    })
+    if not ok or not dialog then
+        logger.err("Word Wise: cannot open hint dialog", dialog)
+        return false
+    end
+    self._hint_dialog = dialog
+    UIManager:show(dialog)
     return true
 end
 
 function WordWise:onHintTap(ges)
-    if not (self:isEnabled() and ges and self.ui and self.ui.view) then return false end
+    if not (self:isEnabled() and ges and self.ui) then return false end
     -- getScreenBoxesFromPositions() returns screen-space boxes, matching ges.pos.
     local pos = ges.pos
     for _, hint in ipairs(self.hints or {}) do

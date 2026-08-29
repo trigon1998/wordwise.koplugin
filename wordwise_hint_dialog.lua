@@ -202,7 +202,7 @@ end
 
 function HintDialog:_makePageControls()
     local label_prev, label_next = "‹", "›"
-    if BD.mirroredUILayout() then label_prev, label_next = label_next, label_prev end
+    if BD.mirroredUILayout and BD.mirroredUILayout() then label_prev, label_next = label_next, label_prev end
     self.arrow_prev = label_prev
     self.arrow_next = label_next
     return ButtonTable:new{
