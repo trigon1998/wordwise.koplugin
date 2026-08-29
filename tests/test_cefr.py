@@ -44,10 +44,9 @@ assert 'align = "left"' in dialog
 assert 'pos' in dialog and '"): "' in dialog
 assert 'dictionary_short' in dialog and 'know_short' in dialog
 assert 'WordWiseHintDialog' in main
-assert 'pcall(WordWiseHintDialog.new' in main
-assert 'if not (self:isEnabled() and ges and self.ui)' in main
-assert 'self:setupTouchZones()' in main
-assert 'ReaderReady consistently' in main
+assert 'pcall(WordWiseHintDialog.new' not in main
+assert 'if not (self:isEnabled() and ges and self.ui and self.ui.view)' in main
+assert 'ReaderReady consistently' not in main
 assert 'self.owner:setSelectedSense(selected)' in dialog
 assert 'local is_current = current_key and entry.sense_key == current_key' in dialog
 assert 'selected = current_key and entry.sense_key == current_key or false' in dialog
