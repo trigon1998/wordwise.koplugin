@@ -1,7 +1,7 @@
 from pathlib import Path
 import sqlite3
 
-ROOT = Path('/home/ubuntu/wordwise-fork')
+ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / 'wordwise.db'
 
 assert DB.exists(), 'bundled database is missing'
@@ -40,21 +40,24 @@ assert 'function WordWise:isWordKnown(entry)' in main
 assert 'iv[2] + GLOSS_HGAP' in main
 print('known_storage_and_overlap_guards_ok')
 dialog = (ROOT / 'wordwise_hint_dialog.lua').read_text()
+assert 'ButtonDialog:extend' in dialog
+assert 'ButtonDialog.init(self)' in dialog
 assert 'align = "left"' in dialog
-assert 'pos' in dialog and '"): "' in dialog
+assert 'pos' in dialog and 'entry.pos' in dialog
 assert 'dictionary_short' in dialog and 'know_short' in dialog
 assert 'WordWiseHintDialog' in main
 assert 'pcall(WordWiseHintDialog.new' not in main
 assert 'if not (self:isEnabled() and ges and self.ui and self.ui.view)' in main
 assert 'ReaderReady consistently' not in main
-assert 'self.owner:setSelectedSense(selected)' in dialog
-assert 'local is_current = current_key and entry.sense_key == current_key' in dialog
-assert 'selected = current_key and entry.sense_key == current_key or false' in dialog
-assert 'bold = self.selected' in dialog
-assert 'local label_prev, label_next = "‹", "›"' in dialog
+assert 'self.owner:setSelectedSense(entry)' in dialog
+assert 'entry.sense_key == self.current_key' in dialog
+assert 'text_font_bold = is_current' in dialog
+assert 'icon_prev, icon_next = "chevron.left", "chevron.right"' in dialog
 assert 'Page %1 of %2' in (ROOT / 'wordwise_l10n.lua').read_text()
 assert 'font_bold = false' in dialog
-assert 'height = self.row_height' in dialog
+assert 'self.movable.ges_events = {}' in dialog
+assert 'self.movable.unmovable = true' in dialog
+assert 'height = SENSE_ROW_HEIGHT' in dialog
 print('popup_selection_style_and_navigation_guards_ok')
 ota = (ROOT / 'wordwise_ota.lua').read_text()
 assert 'trigon1998' in ota and 'wordwise.koplugin' in ota
