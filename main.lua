@@ -46,10 +46,8 @@ local WordWiseOTA = require("wordwise_ota")
 local WW_DIR = DataStorage:getDataDir() .. "/wordwise"
 local STATE_PATH = WW_DIR .. "/state.lua"
 local KNOWN_WORDS_PATH = WW_DIR .. "/known_words.lua"
+local CHECK_UPDATES_SETTING = "wordwise_check_updates"
 local MAX_INLINE_HINT_WIDTH = 240
--- ButtonDialog derives row height from content unless height is explicit. Keep
--- sense rows uniform so the popup remains scannable and scrolls on a regular grid.
-local SENSE_ROW_HEIGHT = Screen:scaleBySize(52)
 
 -- Directory this plugin was loaded from, used to find the bundled dictionary.
 local PLUGIN_ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("[^/\\]+$", "")
@@ -98,41 +96,87 @@ function WordWise:getShowUnderline()
     return G_reader_settings:nilOrTrue("wordwise_show_underline")
 end
 
+function WordWise:getNotifyUpdates()
+    return G_reader_settings:isTrue(CHECK_UPDATES_SETTING)
+end
+
+function WordWise:setNotifyUpdates(enabled)
+    G_reader_settings:saveSetting(CHECK_UPDATES_SETTING, enabled and true or false)
+end
+
+-- Strip only punctuation surrounding a single alphabetic token. Internal
+-- apostrophes and hyphens are deliberately rejected: concatenating fragments
+-- made contractions look like unrelated words (we'll -> well, he'll -> hell).
+local function lookupKey(text)
+    if type(text) ~= "string" then return nil end
+    local key = text:match("^%s*[^%a]*([%a]+)[^%a]*%s*$")
+    if key and #key >= 3 then return key end
+end
+
 -- Resolve only open/user-supplied databases. Kindle/Amazon conversion is
 -- intentionally not part of this Android-focused fork.
-function WordWise:getDBPath()
-    if self._db_path ~= nil then return self._db_path or nil end
-    self._db_path = false
+function WordWise:getDBCandidates()
+    local candidates = {}
     if lfs.attributes(WW_DIR, "mode") == "directory" then
         local preferred = WW_DIR .. "/wordwise.db"
         if lfs.attributes(preferred, "mode") == "file" then
-            self._db_path = preferred
-            return preferred
+            candidates[#candidates + 1] = preferred
         end
+        local names = {}
         for name in lfs.dir(WW_DIR) do
-            if name:match("%.db$") then
-                self._db_path = WW_DIR .. "/" .. name
-                return self._db_path
+            if name ~= "wordwise.db" and name:lower():match("%.db$") then
+                names[#names + 1] = name
             end
+        end
+        table.sort(names)
+        for _, name in ipairs(names) do
+            candidates[#candidates + 1] = WW_DIR .. "/" .. name
         end
     end
     if lfs.attributes(BUNDLED_DB, "mode") == "file" then
-        self._db_path = BUNDLED_DB
-        return BUNDLED_DB
+        candidates[#candidates + 1] = BUNDLED_DB
     end
-    return nil
+    return candidates
+end
+
+function WordWise:getDBPath()
+    if self._db_path ~= nil then return self._db_path or nil end
+    self:getDB()
+    return self._db_path or nil
 end
 
 function WordWise:getDB()
     if self.db == nil then
-        local path = self:getDBPath()
-        self.db = (path and WordWiseDB.open(path)) or false
+        self.db = false
+        local rejected = {}
+        for _, path in ipairs(self:getDBCandidates()) do
+            local opened = WordWiseDB.open(path)
+            if opened then
+                self.db = opened
+                self._db_path = path
+                break
+            end
+            rejected[#rejected + 1] = path
+        end
+        if not self.db then self._db_path = false end
+        if self.db and self._db_path == BUNDLED_DB and #rejected > 0
+                and not self._db_fallback_notified then
+            self._db_fallback_notified = true
+            local rejected_path = rejected[1]
+            UIManager:nextTick(function()
+                if self.ui then
+                    UIManager:show(InfoMessage:new{
+                        text = self:tr("db_fallback", rejected_path),
+                    })
+                end
+            end)
+        end
     end
     return self.db or nil
 end
 
 function WordWise:hasDB()
-    return self:getDBPath() ~= nil
+    return self:getDB() ~= nil
 end
 
 function WordWise:ensureDataDir()
@@ -238,8 +282,8 @@ end
 -- Word Wise. The Word Wise action buttons remain available for glossed words.
 function WordWise:dictLemmaFor(dict_popup)
     if not (dict_popup and dict_popup.word) then return nil end
-    local key = dict_popup.word:gsub("[^%a]", "")
-    if #key < 3 then return nil end
+    local key = lookupKey(dict_popup.word)
+    if not key then return nil end
     local db = self:getDB()
     if not db then return nil end
     local entries = db:lookupAll(key)
@@ -340,8 +384,8 @@ function WordWise:currentLineSpacing()
 end
 
 -- The line spacing to fall back to as "default": the reader's global default if
--- set, else KOReader's built-in medium default (100). Used when restoring on
--- disable if we have no trustworthy captured original.
+-- set, else KOReader's built-in medium default (100). Used only when an older
+-- plugin version did not capture the original per-book value.
 function WordWise:defaultLineSpacing()
     return G_reader_settings:readSetting("copt_line_spacing")
         or (G_defaults and G_defaults:readSetting("DCREREADER_CONFIG_LINE_SPACE_PERCENT_MEDIUM"))
@@ -349,15 +393,34 @@ function WordWise:defaultLineSpacing()
 end
 
 -- Turn the raised gloss spacing on/off by editing the book's ACTUAL line-spacing
--- setting (not a runtime-only override), which persists per-book. Only called
--- when the reader toggles Word Wise: enabling sets HINT_INTERLINE_MIN (=180%),
--- disabling sets the default. We never re-assert it on open, so once it is on
--- the reader is free to lower the line spacing again and it sticks.
+-- setting. Enabling captures the exact per-book value; disabling restores it
+-- unless the reader deliberately changed spacing while Word Wise was active.
 function WordWise:setLineSpacing(on)
     if not self:isSupportedDocument() then return end
     local conf = self.ui.font and self.ui.font.configurable
     if not conf then return end
-    conf.line_spacing = on and HINT_INTERLINE_MIN or self:defaultLineSpacing()
+    local ds = self.ui.doc_settings
+    local previous_key = "wordwise_previous_line_spacing"
+    local applied_key = "wordwise_applied_line_spacing"
+    if on then
+        if ds and not ds:has(previous_key) then
+            ds:saveSetting(previous_key, conf.line_spacing)
+        end
+        conf.line_spacing = math.max(conf.line_spacing or self:defaultLineSpacing(), HINT_INTERLINE_MIN)
+        if ds then ds:saveSetting(applied_key, conf.line_spacing) end
+    else
+        local previous = ds and ds:readSetting(previous_key)
+        local applied = (ds and ds:readSetting(applied_key)) or HINT_INTERLINE_MIN
+        -- If the reader changed spacing while Word Wise was enabled, preserve
+        -- that explicit choice. Otherwise restore the exact captured value.
+        if conf.line_spacing == applied then
+            conf.line_spacing = previous or self:defaultLineSpacing()
+        end
+        if ds then
+            ds:delSetting(previous_key)
+            ds:delSetting(applied_key)
+        end
+    end
     self.ui.document:setInterlineSpacePercent(conf.line_spacing)
     self.ui:handleEvent(Event:new("UpdatePos"))
 end
@@ -388,6 +451,12 @@ function WordWise:onReaderReady()
     end
 end
 
+-- Wake-time update checks are opt-in and silent unless a newer verified
+-- release is available. The updater throttles these checks to once per hour.
+function WordWise:onResume()
+    self:backgroundUpdateCheck()
+end
+
 -- Close the dictionary DB when the document closes so the SQLite connection and
 -- prepared statement are released deterministically (rather than at GC).
 function WordWise:onCloseDocument()
@@ -401,9 +470,10 @@ function WordWise:onCloseDocument()
     self:flushState()
     if self.db then
         self.db:close()
-        self.db = nil
     end
+    self.db = nil
     self._db_path = nil
+    self._db_fallback_notified = nil
     self.hints = {}
     self._gloss_metrics = nil
 end
@@ -433,6 +503,39 @@ WordWise.onDocumentPartiallyRerendered = WordWise.onDocumentRerendered
 
 -- Core: enumerate this page's words, keep glosses for the difficult ones -----
 
+function WordWise:chooseHintEntry(entries, selected_key, cefr_rank)
+    -- A sense explicitly selected in the popup is a display preference, not a
+    -- vocabulary-level decision. The word already qualified for Word Wise via
+    -- one of its senses, so do not silently discard the user's choice merely
+    -- because that particular dictionary sense has a lower CEFR label.
+    local word_qualifies = false
+    for _, candidate in ipairs(entries or {}) do
+        if candidate.cefr_rank >= cefr_rank
+                and not self:isSenseKnown(candidate) then
+            word_qualifies = true
+            break
+        end
+    end
+    if not word_qualifies then return nil end
+
+    if selected_key then
+        for _, candidate in ipairs(entries or {}) do
+            if candidate.sense_key == selected_key
+                    and not self:isSenseKnown(candidate) then
+                return candidate
+            end
+        end
+    end
+
+    -- With no usable manual choice, retain the normal CEFR threshold behavior.
+    for _, candidate in ipairs(entries or {}) do
+        if candidate.cefr_rank >= cefr_rank
+                and not self:isSenseKnown(candidate) then
+            return candidate
+        end
+    end
+end
+
 function WordWise:computePageHints()
     self.hints = {}
     self.text_col = nil
@@ -457,26 +560,12 @@ function WordWise:computePageHints()
         last_xp = end_xp
         local word = doc:getTextFromXPointers(xp, end_xp)
         if word then
-            local key = word:gsub("[^%a]", "")
-            if #key >= 3 then
+            local key = lookupKey(word)
+            if key then
                 local entries = db:lookupAll(key)
                 if entries and #entries > 0 then
                     local selected_key = self.selected_senses[entries[1].word:lower()]
-                    local entry
-                    for _, candidate in ipairs(entries) do
-                        if candidate.sense_key == selected_key and candidate.cefr_rank >= cefr_rank and not self:isSenseKnown(candidate) then
-                            entry = candidate
-                            break
-                        end
-                    end
-                    if not entry then
-                        for _, candidate in ipairs(entries) do
-                            if candidate.cefr_rank >= cefr_rank and not self:isSenseKnown(candidate) then
-                                entry = candidate
-                                break
-                            end
-                        end
-                    end
+                    local entry = self:chooseHintEntry(entries, selected_key, cefr_rank)
                     if entry then
                         local boxes = doc:getScreenBoxesFromPositions(xp, end_xp, true)
                         local sbox = boxes and boxes[1]
@@ -837,6 +926,75 @@ function WordWise:showOTAStatus(text)
     UIManager:show(self._ota_status_message)
 end
 
+local function plainReleaseNotes(notes)
+    notes = tostring(notes or "")
+    notes = notes:gsub("\r\n", "\n")
+    notes = notes:gsub("#+%s*", "")
+    notes = notes:gsub("%*%*(.-)%*%*", "%1")
+    notes = notes:gsub("`(.-)`", "%1")
+    notes = notes:gsub("^%s+", ""):gsub("%s+$", "")
+    return notes
+end
+
+function WordWise:installOTA(release)
+    self:showOTAStatus(self:tr("downloading_update"))
+    Trapper:wrap(function()
+        local ok, install_err = WordWiseOTA:install(release, PLUGIN_DIR)
+        self:dismissOTAStatus()
+        if not ok then
+            UIManager:show(InfoMessage:new{
+                text = self:tr("update_install_failed", self:otaErrorText(install_err)),
+            })
+            return
+        end
+        UIManager:show(ConfirmBox:new{
+            text = self:tr("update_installed", release.version),
+            ok_text = self:tr("restart_button"),
+            cancel_text = self:tr("later_button"),
+            ok_callback = function() UIManager:restartKOReader() end,
+        })
+    end)
+end
+
+function WordWise:showOTARelease(release)
+    local TextViewer = require("ui/widget/textviewer")
+    local viewer
+    local notes = plainReleaseNotes(release.notes)
+    if notes == "" then notes = self:tr("no_release_notes") end
+    viewer = TextViewer:new{
+        title = self:tr("update_available_title"),
+        text = self:tr("update_versions", PLUGIN_VERSION, release.version) .. "\n\n" .. notes,
+        buttons_table = {{
+            {
+                text = self:tr("cancel"),
+                callback = function() UIManager:close(viewer) end,
+            },
+            {
+                text = self:tr("update_and_restart"),
+                callback = function()
+                    UIManager:close(viewer)
+                    self:installOTA(release)
+                end,
+            },
+        }},
+        add_default_buttons = false,
+    }
+    UIManager:show(viewer)
+end
+
+function WordWise:backgroundUpdateCheck()
+    if not self:getNotifyUpdates() or not NetworkMgr:isWifiOn() then return end
+    UIManager:scheduleIn(0.1, function()
+        local release, _, checked = WordWiseOTA:fetch_latest_cached()
+        if not checked or not release then return end
+        if WordWiseOTA.compare_versions(release.version, PLUGIN_VERSION) == 1 then
+            local Notification = require("ui/widget/notification")
+            Notification:notify(self:tr("update_notification", release.version),
+                Notification.SOURCE_ALWAYS_SHOW)
+        end
+    end)
+end
+
 function WordWise:checkForOTA()
     local co = coroutine.running()
     if not co then
@@ -865,21 +1023,7 @@ function WordWise:checkForOTA()
         return
     end
 
-    UIManager:show(ConfirmBox:new{
-        text = self:tr("update_available", PLUGIN_VERSION, release.version),
-        ok_text = self:tr("update_button"),
-        cancel_text = self:tr("cancel"),
-        ok_callback = function()
-            Trapper:wrap(function()
-                local ok, install_err = WordWiseOTA:install(release, PLUGIN_DIR)
-                if ok then
-                    UIManager:show(InfoMessage:new{ text = self:tr("update_installed") })
-                else
-                    UIManager:show(InfoMessage:new{ text = self:tr("update_install_failed", self:otaErrorText(install_err)) })
-                end
-            end)
-        end,
-    })
+    self:showOTARelease(release)
 end
 
 function WordWise:setEnabled(on)
@@ -957,8 +1101,26 @@ function WordWise:getSubMenu()
             callback = function() self:showKnownWordsPath() end,
         },
         {
-            text = self:tr("check_update"),
-            callback = function() self:checkForOTA() end,
+            text = self:tr("updates_menu"),
+            sub_item_table_func = function()
+                return {
+                    {
+                        text = self:tr("notify_updates"),
+                        checked_func = function() return self:getNotifyUpdates() end,
+                        callback = function()
+                            self:setNotifyUpdates(not self:getNotifyUpdates())
+                        end,
+                    },
+                    {
+                        text = self:tr("check_update"),
+                        callback = function() self:checkForOTA() end,
+                    },
+                    {
+                        text = self:tr("installed_version", PLUGIN_VERSION),
+                        enabled_func = function() return false end,
+                    },
+                }
+            end,
         },
         {
             text_func = function()

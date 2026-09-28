@@ -108,6 +108,7 @@ CREATE TABLE entries (
     id         INTEGER PRIMARY KEY,
     word       TEXT NOT NULL COLLATE NOCASE,
     short_def  TEXT NOT NULL,
+    full_def   TEXT NOT NULL,
     cefr_level TEXT NOT NULL CHECK(cefr_level IN ('A1','A2','B1','B2','C1','C2')),
     pos        TEXT,
     sense_key  TEXT NOT NULL UNIQUE,
@@ -118,7 +119,7 @@ CREATE INDEX entries_word_idx ON entries(word COLLATE NOCASE);
 CREATE INDEX entries_cefr_idx ON entries(cefr_level);
 ```
 
-Every sense is a separate row. `sense_key` must be deterministic and unique so that saved selections remain stable across page turns. A practical fallback key is the normalized lemma, part of speech, and gloss joined with a non-printing separator; a builder may use a stronger stable identifier when the upstream source provides one.
+Every sense is a separate row. `short_def` is the glanceable overlay phrase; `full_def` preserves the complete attributed source definition shown in the popup. `sense_key` must be deterministic and unique so that saved selections remain stable across page turns. A practical fallback key is the normalized lemma, part of speech, and full definition joined with a non-printing separator; a builder may use a stronger stable identifier when the upstream source provides one.
 
 `wordwise_db.lua` exposes two important lookup levels:
 
@@ -150,7 +151,7 @@ python3 build_cefr_wordnet_dict.py \\
   --out ../wordwise.db
 ```
 
-The builder merges the CEFR-J and Octanove profiles, preserves curated project glosses, and adds multiple open WordNet senses for CEFR-mapped lemmas. Curated rows should take precedence when the project has a better short gloss. WordNet definitions should remain attributable to their source and should not be rewritten in a way that obscures provenance.
+The builder merges the CEFR-J and Octanove profiles, preserves curated project glosses, and adds multiple open WordNet senses for CEFR-mapped lemmas. `tools/gloss_compactor.py` deterministically extracts a short phrase capped at 72 characters and 12 words. It removes explanatory material from the inline form without replacing the source text: the complete WordNet definition remains in `full_def` with its attribution. Curated rows take precedence when the project has a better short gloss.
 
 Before committing a rebuilt database, check:
 
@@ -168,7 +169,7 @@ Do not add Kindle/Amazon-derived data to the public build. Keep raw source files
 
 ## 7. Hint rendering and collision handling
 
-The inline gloss width is measured using KOReader's rendering metrics, not by counting characters. The current maximum is controlled by `MAX_INLINE_HINT_WIDTH`. If a definition exceeds the available width, `RenderText:truncateTextByWidth` produces a compact string ending in `…`. The full definition remains in the hint object and is shown in the popup title.
+The database first supplies a concise `short_def`; its 72-character/12-word limit is a content rule rather than a rendering approximation. The inline gloss width is then measured using KOReader's rendering metrics, not by counting characters. The current maximum is controlled by `MAX_INLINE_HINT_WIDTH`. If the concise definition still exceeds the available width, `RenderText:truncateTextByWidth` produces a string ending in `…`. `full_def` remains in the hint object and is shown in the popup title.
 
 The vertical placement algorithm calculates the word box, gloss metrics, top/bottom safe insets, and marker position. It prefers an above-word gloss. If the gloss would cross the top safe inset, the entire unit is moved below the word and the marker points upward.
 
@@ -211,6 +212,11 @@ User state must not be stored inside `wordwise.koplugin`, because a plugin updat
 ```
 
 `known_words.lua` stores a table under `words`, keyed by normalized lemma. `state.lua` stores selected sense keys under `selected_senses`. The files are opened with KOReader's `LuaSettings` module, which provides `open`, `saveSetting`, and `flush` operations.[3]
+
+An explicitly selected sense is always honored while it remains available and
+the word is not marked known. The CEFR threshold selects which words receive a
+hint by default; it must not silently replace a user's selected sense when one
+lemma has senses carrying different CEFR labels.
 
 The plugin includes a menu action named **Known words file** that displays the exact path on the device. This is useful for backup, troubleshooting, and migration. An updater must never purge or replace the KOReader data directory.
 
@@ -279,7 +285,7 @@ Asset: wordwise.koplugin.zip
 The updater must use GitHub **Releases**, not the moving `main` branch, as the installation source. A release is an immutable, reviewable version boundary. The updater should perform the following sequence:
 
 ```text
-User selects Check for updates
+User selects Updates → Check for updates
         │
         ▼
 Request latest public GitHub release over HTTPS
@@ -289,7 +295,7 @@ Request latest public GitHub release over HTTPS
         └── locate the exact ZIP asset
         │
         ▼
-Ask the user before downloading/installing
+Show versions and release notes; ask before downloading/installing
         │
         ▼
 Download to KOReader data/wordwise/ota/
@@ -304,8 +310,13 @@ Extract beside the active plugin into a temporary directory
 Atomically swap plugin directories with rollback available
         │
         ▼
-Tell the user to restart KOReader
+Offer to restart KOReader immediately
 ```
+
+The **Notify on wake when update available** option performs a release-metadata
+check only. It never downloads or installs a package in the background, is
+opt-in, requires Wi-Fi to already be on, and is throttled to one attempt per
+hour for the current KOReader session.
 
 The updater must not silently install an arbitrary branch archive. It should reject a release when:
 
@@ -313,7 +324,7 @@ The updater must not silently install an arbitrary branch archive. It should rej
 - `tag_name` is not a supported semantic version;
 - the asset name is not the expected plugin ZIP;
 - the ZIP does not contain a single root directory named `wordwise.koplugin`;
-- required files such as `main.lua`, `_meta.lua`, `wordwise_db.lua`, and `wordwise.db` are missing;
+- required runtime files (`main.lua`, `_meta.lua`, `wordwise_db.lua`, `wordwise_hint_dialog.lua`, `wordwise_l10n.lua`, `wordwise_ota.lua`, `wordwise_sha256.lua`, or `wordwise.db`) are missing;
 - an archive path contains `..`, an absolute path, or another path traversal pattern;
 - the download is not HTTPS or returns an unexpected HTTP status; or
 - the replacement cannot be completed with a rollback path.
@@ -328,7 +339,7 @@ The updater must preserve:
 
 The user database must not be overwritten by an OTA package. The bundled database inside the plugin may change with a release, but a user-supplied database in the data directory always remains authoritative.
 
-A release should include a SHA-256 checksum asset or a release-body checksum. If checksum verification is not yet implemented, the UI must describe the updater as a convenience updater rather than a cryptographically verified updater. The preferred long-term design is to publish both:
+A release must include a SHA-256 checksum asset. The updater downloads and verifies both of these exact assets before extracting anything:
 
 ```text
 wordwise.koplugin.zip

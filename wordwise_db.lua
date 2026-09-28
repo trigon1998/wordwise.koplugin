@@ -7,6 +7,7 @@ The runtime schema supports multiple context-sensitive hints per word:
       id INTEGER PRIMARY KEY,
       word TEXT NOT NULL COLLATE NOCASE,
       short_def TEXT NOT NULL,
+      full_def TEXT,
       cefr_level TEXT NOT NULL,
       pos TEXT,
       sense_key TEXT NOT NULL,
@@ -42,28 +43,69 @@ local function shorten(def)
     return def
 end
 
+-- Open English WordNet contains entries for surnames, government departments,
+-- religious titles, and other named/specialized senses. Older generated DBs
+-- have no explicit sense rank and may place those before the everyday meaning
+-- simply because their lexical entry was enumerated first.
+local function legacy_sense_penalty(gloss)
+    local text = (gloss or ""):lower()
+    if text:match("^united states ")
+            or text:match("^[%a%-]+ statesman ")
+            or text:match("^english [%a%-]+ who ")
+            or text:match("%(%d%d%d%d%-%d%d%d%d%)")
+            or text:match("^the federal department ")
+            or text:match("^the sacred writings of ")
+            or text:match("^a river in ")
+            or text:match("^a city in ")
+            or text:match("^a town in ")
+            or text:match("^the capital of ")
+            or text:find("term of address for priests", 1, true)
+            or text:find("theologians in the period", 1, true)
+            or text:find("first person in the trinity", 1, true) then
+        return 1
+    end
+    return 0
+end
+
 local NO_DEINFLECT = {
     morning = true, evening = true, passing = true,
+}
+
+local IRREGULAR = {
+    does = "do", goes = "go", has = "have", children = "child", men = "man",
+    women = "woman", people = "person", mice = "mouse", geese = "goose",
+    teeth = "tooth", feet = "foot",
 }
 
 local function candidates(w)
     if NO_DEINFLECT[w] then return { w } end
     local out = { w }
+    local seen = { [w] = true }
     local n = #w
-    local function add(s) if s and #s >= 3 then out[#out + 1] = s end end
+    local function add(s, min_length)
+        if s and #s >= (min_length or 3) and not seen[s] then
+            seen[s] = true
+            out[#out + 1] = s
+        end
+    end
+    add(IRREGULAR[w], 2)
     if n >= 5 and w:sub(-3) == "ies" then add(w:sub(1, n - 3) .. "y") end
-    if n >= 5 and w:sub(-2) == "es" then add(w:sub(1, n - 2)) end
+    -- Try the ordinary trailing-s form first: rates -> rate, notes -> note,
+    -- uses -> use. Only then try -es, which handles boxes/classes/wishes.
     if n >= 4 and w:sub(-1) == "s" then add(w:sub(1, n - 1)) end
+    if n >= 5 and w:sub(-2) == "es" then add(w:sub(1, n - 2)) end
     if n >= 5 and w:sub(-2) == "ly" then add(w:sub(1, n - 2)) end
     if n >= 5 and w:sub(-2) == "ed" then
+        if w:sub(n - 2, n - 2) == w:sub(n - 3, n - 3) then add(w:sub(1, n - 3)) end
         add(w:sub(1, n - 1))
         add(w:sub(1, n - 2))
-        if w:sub(n - 2, n - 2) == w:sub(n - 3, n - 3) then add(w:sub(1, n - 3)) end
     end
     if n >= 6 and w:sub(-3) == "ing" then
-        add(w:sub(1, n - 3))
-        add(w:sub(1, n - 3) .. "e")
         if w:sub(n - 3, n - 3) == w:sub(n - 4, n - 4) then add(w:sub(1, n - 4)) end
+        -- Restored-e forms must precede the bare stem: riding -> ride rather
+        -- than rid, hoping -> hope rather than hop.
+        add(w:sub(1, n - 3) .. "e")
+        add(w:sub(1, n - 3))
     end
     return out
 end
@@ -109,8 +151,18 @@ function WordWiseDB.open(path)
         cache_count = 0,
         legacy = not columns.cefr_level,
     }, WordWiseDB)
+    self.has_full_def = columns.full_def == true
+    self.has_sense_rank = columns.sense_rank == true
     if columns.cefr_level then
-        self.query_sql = "SELECT rowid, word, short_def, cefr_level, pos, sense_key, source FROM entries WHERE word = ?1 COLLATE NOCASE ORDER BY rowid;"
+        local full_def_column = self.has_full_def and ", full_def" or ""
+        local sense_rank_column = self.has_sense_rank and ", sense_rank" or ""
+        self.query_sql = "SELECT rowid, word, short_def, cefr_level, pos, sense_key, source"
+            .. full_def_column
+            .. sense_rank_column
+            .. " FROM entries WHERE word = ?1 COLLATE NOCASE "
+            .. "ORDER BY CASE WHEN source = 'open_glosses.tsv' THEN 0 ELSE 1 END"
+            .. (self.has_sense_rank and ", sense_rank" or "")
+            .. ", rowid;"
     elseif columns.difficulty then
         self.query_sql = "SELECT rowid, word, short_def, difficulty, pos FROM entries WHERE word = ?1 COLLATE NOCASE ORDER BY rowid;"
     else
@@ -152,15 +204,20 @@ function WordWiseDB:_query(key)
                     source = row[7]
                 end
                 if level then
+                    local full_gloss = self.has_full_def and shorten(row[8]) or gloss
+                    local rank_index = self.has_full_def and 9 or 8
                     result[#result + 1] = {
                         id = tonumber(row[1]),
                         word = row[2] or key,
                         gloss = gloss,
+                        full_gloss = full_gloss or gloss,
                         cefr_level = level,
                         cefr_rank = CEFR_RANK[level],
                         pos = pos,
                         sense_key = skey,
                         source = source,
+                        sense_rank = self.has_sense_rank and tonumber(row[rank_index]) or nil,
+                        _legacy_order = #result + 1,
                     }
                 end
             end
@@ -168,6 +225,17 @@ function WordWiseDB:_query(key)
         self.stmt:clearbind():reset()
     end)
     if not ok then logger.warn("WordWiseDB: lookup failed for", key, tostring(err)) end
+    if not self.has_sense_rank and #result > 1 then
+        table.sort(result, function(a, b)
+            local ap = a.source == "open_glosses.tsv" and -1
+                or legacy_sense_penalty(a.full_gloss)
+            local bp = b.source == "open_glosses.tsv" and -1
+                or legacy_sense_penalty(b.full_gloss)
+            if ap ~= bp then return ap < bp end
+            return a._legacy_order < b._legacy_order
+        end)
+    end
+    for _, entry in ipairs(result) do entry._legacy_order = nil end
     return result
 end
 
@@ -217,6 +285,13 @@ end
 function WordWiseDB:lookup(word)
     local rows = self:lookupAll(word)
     return rows and rows[1] or nil
+end
+
+-- Exposed for lightweight regression tests and for future callers that need to
+-- preview the same de-inflection order without opening SQLite.
+function WordWiseDB.candidates(word)
+    if not word then return {} end
+    return candidates(word:lower())
 end
 
 function WordWiseDB:close()

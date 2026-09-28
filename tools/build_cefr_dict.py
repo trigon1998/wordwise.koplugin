@@ -17,6 +17,8 @@ import hashlib
 import sqlite3
 from pathlib import Path
 
+from gloss_compactor import compact_gloss
+
 LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
 POS_ALIASES = {
     "noun": "noun", "verb": "verb", "adjective": "adjective", "adverb": "adverb",
@@ -80,6 +82,7 @@ def main():
     rows = []
     skipped = 0
     seen = set()
+    sense_ranks = {}
     with open(args.glosses, encoding="utf-8-sig") as f:
         for line_no, line in enumerate(f, 1):
             parts = line.rstrip("\n").split("\t")
@@ -100,11 +103,14 @@ def main():
             level = choose_level(level_set)
             if not sense_key:
                 sense_key = hashlib.sha1(f"{word}\x1f{pos}\x1f{gloss}".encode()).hexdigest()[:16]
-            dedupe_key = (word, gloss, level, pos, sense_key)
+            dedupe_key = (word, gloss, level, pos)
             if dedupe_key in seen:
                 continue
             seen.add(dedupe_key)
-            rows.append((word, gloss, level, pos or None, sense_key, source or None))
+            short_gloss = compact_gloss(word, gloss)
+            sense_ranks[word] = sense_ranks.get(word, 0) + 1
+            rows.append((word, short_gloss, gloss, level, pos or None, sense_key,
+                         source or None, sense_ranks[word]))
 
     out = Path(args.out)
     if out.exists(): out.unlink()
@@ -115,15 +121,17 @@ def main():
             id INTEGER PRIMARY KEY,
             word TEXT NOT NULL COLLATE NOCASE,
             short_def TEXT NOT NULL,
+            full_def TEXT NOT NULL,
             cefr_level TEXT NOT NULL CHECK(cefr_level IN ('A1','A2','B1','B2','C1','C2')),
             pos TEXT,
             sense_key TEXT NOT NULL UNIQUE,
-            source TEXT
+            source TEXT,
+            sense_rank INTEGER NOT NULL
         );
         CREATE INDEX entries_word_idx ON entries(word COLLATE NOCASE);
         CREATE INDEX entries_cefr_idx ON entries(cefr_level);
     """)
-    con.executemany("INSERT INTO entries(word,short_def,cefr_level,pos,sense_key,source) VALUES(?,?,?,?,?,?)", rows)
+    con.executemany("INSERT INTO entries(word,short_def,full_def,cefr_level,pos,sense_key,source,sense_rank) VALUES(?,?,?,?,?,?,?,?)", rows)
     con.commit()
     con.close()
     print(f"wrote {out}: {len(rows)} senses; skipped {skipped} gloss rows without CEFR mapping")
