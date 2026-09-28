@@ -1,0 +1,29 @@
+name: Build release assets
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  ota-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Build and upload verified OTA assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git archive --format=zip --prefix=wordwise.koplugin/ \
+            --output=wordwise.koplugin.zip HEAD
+          sha256sum wordwise.koplugin.zip > wordwise.koplugin.zip.sha256
+          sha256sum --check wordwise.koplugin.zip.sha256
+          gh release upload "$RELEASE_TAG" \
+            wordwise.koplugin.zip \
+            wordwise.koplugin.zip.sha256 \
+            --clobber
