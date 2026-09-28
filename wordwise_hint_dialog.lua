@@ -17,6 +17,7 @@ local Screen = Device.screen
 local SENSE_ROW_HEIGHT = Screen:scaleBySize(52)
 local PAGE_BUTTON_HEIGHT = Screen:scaleBySize(42)
 local ACTION_BUTTON_HEIGHT = Screen:scaleBySize(48)
+local MAX_POPUP_SENSES = 8
 
 local HintDialog = ButtonDialog:extend{
     owner = nil,
@@ -33,8 +34,16 @@ function HintDialog:_collectEntries()
     self.entries = {}
     for _, entry in ipairs(self.hint.senses or {}) do
         if not self.owner:isSenseKnown(entry) then
-            self.entries[#self.entries + 1] = entry
+            if #self.entries < MAX_POPUP_SENSES or entry.sense_key == self.current_key then
+                self.entries[#self.entries + 1] = entry
+            end
         end
+    end
+
+    -- Keep the list compact, but never hide the currently displayed sense when
+    -- it falls after the first page of dictionary results.
+    if #self.entries > MAX_POPUP_SENSES then
+        table.remove(self.entries, MAX_POPUP_SENSES)
     end
 
     -- A known-word filter should not normally remove the displayed entry, but
@@ -48,11 +57,11 @@ function HintDialog:_calculatePageSize()
     local dialog_budget = math.floor(Screen:getHeight() * 0.94)
     local title_budget = math.floor(Screen:getHeight() * 0.17)
     local fixed_height = title_budget
-        + PAGE_BUTTON_HEIGHT
-        + ACTION_BUTTON_HEIGHT
+        + self.page_button_height
+        + self.action_button_height
         + 2 * Size.border.window
         + 2 * Size.padding.button
-    return math.max(1, math.floor((dialog_budget - fixed_height) / SENSE_ROW_HEIGHT))
+    return math.max(1, math.floor((dialog_budget - fixed_height) / self.sense_row_height))
 end
 
 function HintDialog:_pageLabel()
@@ -60,8 +69,15 @@ function HintDialog:_pageLabel()
 end
 
 function HintDialog:_selectEntry(entry)
-    self.owner:setSelectedSense(entry)
+    local owner = self.owner
     self:closeDialog()
+    owner:setSelectedSense(entry)
+end
+
+function HintDialog:_selectCallback(entry)
+    -- Bind the entry as a function argument so each row owns a distinct
+    -- upvalue on LuaJIT/Lua 5.1; no callback can drift to another loop item.
+    return function() self:_selectEntry(entry) end
 end
 
 function HintDialog:_setPage(page)
@@ -86,13 +102,12 @@ function HintDialog:_makeSenseRows()
         rows[#rows + 1] = {{
             text = string.format("%s%s: %s", cefr, pos, entry.gloss or ""),
             align = "left",
-            height = SENSE_ROW_HEIGHT,
-            padding_v = Screen:scaleBySize(4),
+            height = self.sense_row_height,
             avoid_text_truncation = true,
-            text_font_face = "infofont",
-            text_font_size = self.popup_font_size,
-            text_font_bold = is_current,
-            callback = function() self:_selectEntry(entry) end,
+            font_face = "infofont",
+            font_size = self.popup_font_size,
+            font_bold = is_current,
+            callback = self:_selectCallback(entry),
         }}
     end
     return rows
@@ -108,17 +123,17 @@ function HintDialog:_makePageRow()
             icon = icon_prev,
             bordersize = 0,
             width = Screen:scaleBySize(52),
-            height = PAGE_BUTTON_HEIGHT,
+            height = self.page_button_height,
             enabled = self.page > 1,
             callback = function() self:_setPage(self.page - 1) end,
         },
         {
             text = self:_pageLabel(),
             bordersize = 0,
-            height = PAGE_BUTTON_HEIGHT,
-            text_font_face = "infofont",
-            text_font_size = self.popup_font_size,
-            text_font_bold = false,
+            height = self.page_button_height,
+            font_face = "infofont",
+            font_size = self.popup_font_size,
+            font_bold = false,
             enabled = false,
             callback = function() end,
         },
@@ -126,7 +141,7 @@ function HintDialog:_makePageRow()
             icon = icon_next,
             bordersize = 0,
             width = Screen:scaleBySize(52),
-            height = PAGE_BUTTON_HEIGHT,
+            height = self.page_button_height,
             enabled = self.page < self.page_count,
             callback = function() self:_setPage(self.page + 1) end,
         },
@@ -138,9 +153,10 @@ function HintDialog:_makeActionRow()
         {
             text = self.owner:isWordKnown(self.current_entry)
                 and self.owner:tr("show_short") or self.owner:tr("know_short"),
-            height = ACTION_BUTTON_HEIGHT,
-            text_font_face = "infofont",
-            text_font_size = self.popup_font_size,
+            height = self.action_button_height,
+            font_face = "infofont",
+            font_size = self.popup_font_size,
+            font_bold = false,
             callback = function()
                 self.owner:setWordKnown(self.current_entry,
                     not self.owner:isWordKnown(self.current_entry))
@@ -150,9 +166,10 @@ function HintDialog:_makeActionRow()
         },
         {
             text = self.owner:tr("dictionary_short"),
-            height = ACTION_BUTTON_HEIGHT,
-            text_font_face = "infofont",
-            text_font_size = self.popup_font_size,
+            height = self.action_button_height,
+            font_face = "infofont",
+            font_size = self.popup_font_size,
+            font_bold = false,
             callback = function()
                 local box = self.hint.box
                 local word = self.hint.word
@@ -165,9 +182,10 @@ function HintDialog:_makeActionRow()
         {
             text = self.owner:tr("cancel"),
             id = "close",
-            height = ACTION_BUTTON_HEIGHT,
-            text_font_face = "infofont",
-            text_font_size = self.popup_font_size,
+            height = self.action_button_height,
+            font_face = "infofont",
+            font_size = self.popup_font_size,
+            font_bold = false,
             callback = function() self:closeDialog() end,
         },
     }
@@ -175,7 +193,9 @@ end
 
 function HintDialog:_preparePage()
     self.title = T("Word Wise: %1", self.hint.word) .. "\n"
-        .. (self.current_entry and self.current_entry.gloss or self.hint.text or "")
+        .. (self.current_entry
+            and (self.current_entry.full_gloss or self.current_entry.gloss)
+            or self.hint.text or "")
     self.buttons = self:_makeSenseRows()
     self.buttons[#self.buttons + 1] = self:_makePageRow()
     self.buttons[#self.buttons + 1] = self:_makeActionRow()
@@ -183,9 +203,19 @@ end
 
 function HintDialog:init()
     if not self.entries then
-        local info_face = Font:getFace("infofont")
-        self.popup_font_size = info_face.orig_size or 24
+        local reader_font = self.owner.ui and self.owner.ui.font
+            and self.owner.ui.font.configurable
+        self.popup_font_size = (reader_font and reader_font.font_size) or 24
+        local info_face = Font:getFace("infofont", self.popup_font_size)
         self.info_face = info_face
+        -- Fixed 52px rows forced Button to shrink large reader fonts. Grow the
+        -- row budgets with the current book font so the requested size is kept.
+        self.sense_row_height = math.max(SENSE_ROW_HEIGHT,
+            Screen:scaleBySize(self.popup_font_size + 20))
+        self.page_button_height = math.max(PAGE_BUTTON_HEIGHT,
+            Screen:scaleBySize(self.popup_font_size + 14))
+        self.action_button_height = math.max(ACTION_BUTTON_HEIGHT,
+            Screen:scaleBySize(self.popup_font_size + 16))
         self.page = 1
         self:_collectEntries()
         self.page_size = self:_calculatePageSize()

@@ -13,6 +13,12 @@ The fork removes Kindle/Amazon corpus detection and conversion. Its bundled data
 3. Restart KOReader.
 4. Open a reflowable book and select **☰ → More tools → Word Wise → Show inline hints**.
 
+Word Wise can update itself from signed-off GitHub release assets via **Word
+Wise → Updates**. It shows the release notes before installation, verifies the
+ZIP against its published SHA-256 checksum, and offers to restart KOReader when
+the atomic installation succeeds. The optional wake-time notification only
+checks release metadata; it never installs an update automatically.
+
 The plugin targets reflowable/crengine documents. Paging/fixed-layout documents are not currently supported because the overlay needs KOReader’s visible-word and screen-box APIs.
 
 ## CEFR filtering
@@ -25,7 +31,9 @@ CEFR levels are stored as `A1`, `A2`, `B1`, `B2`, `C1`, or `C2`. Unknown or malf
 
 A word can have multiple senses. The database stores each sense as a separate row with a stable `sense_key`, part of speech, CEFR level, and source. The first eligible sense is shown by default.
 
-Inline hints are bounded to a compact width. When a definition is wider than that limit, the inline rendering uses a single ellipsis glyph (`…`) instead of spilling across the page; tapping the hint opens the full definition and the available senses. If an above-word hint would cross the top safe inset, the complete hint unit is placed below the word with an upward-pointing marker.
+Every dictionary sense stores a concise `short_def` for the page overlay and the attributed source text in `full_def`. The build pipeline removes domain labels, examples, parenthetical detail, and long explanatory tails from the inline form, then enforces a 72-character/12-word ceiling. This is deterministic extraction rather than an invented definition. Tapping the hint opens the complete `full_def` and the available senses.
+
+Inline hints are also bounded to a compact rendered width. If a concise definition is still wider than the available space, the renderer uses a single ellipsis glyph (`…`) instead of spilling across the page. If an above-word hint would cross the top safe inset, the complete hint unit is placed below the word with an upward-pointing marker.
 
 Tap a visible hint to open the Word Wise action dialog. The full currently displayed definition appears in the title area, so that same sense is omitted from the selectable list below and is not duplicated. The alternative sense rows are left-aligned, show the CEFR/POS classification in a compact bold row, and use a fixed height so one-line and wrapped definitions remain visually aligned. The three action controls are placed in one horizontal row to reduce popup height. Selecting a sense saves it for that lemma and repaints the current page so the preferred gloss is shown on future occurrences.
 
@@ -40,6 +48,7 @@ CREATE TABLE entries (
     id         INTEGER PRIMARY KEY,
     word       TEXT NOT NULL COLLATE NOCASE,
     short_def  TEXT NOT NULL,
+    full_def   TEXT NOT NULL,
     cefr_level TEXT NOT NULL CHECK(cefr_level IN ('A1','A2','B1','B2','C1','C2')),
     pos        TEXT,
     sense_key  TEXT NOT NULL UNIQUE,
@@ -65,7 +74,7 @@ python3 build_cefr_wordnet_dict.py \
   --out ../wordwise.db
 ```
 
-The builder preserves curated rows from `open_glosses.tsv`, adds multiple WordNet senses for CEFR-mapped lemmas, and never invents a CEFR level. Gloss rows without an audited CEFR mapping are reported and skipped.
+The builder preserves curated rows from `open_glosses.tsv`, adds multiple WordNet senses for CEFR-mapped lemmas, and never invents a CEFR level. It generates the compact `short_def` while retaining the original source definition in `full_def`. Gloss rows without an audited CEFR mapping are reported and skipped.
 
 To build only from curated glosses, use `build_cefr_dict.py`. The removed upstream Zipf difficulty pipeline is intentionally not part of this fork’s release build.
 
