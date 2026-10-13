@@ -3,12 +3,28 @@ local root = (... and ... ~= "") and ... or "."
 for _, name in ipairs({
     "_meta.lua", "main.lua", "wordwise_db.lua", "wordwise_hint_dialog.lua",
     "wordwise_l10n.lua", "wordwise_ota.lua", "wordwise_sha256.lua",
+    "wordwise_reading_level.lua", "wordwise_bubble.lua",
 }) do
     local chunk, err = loadfile(root .. "/" .. name)
     assert(chunk, name .. ": " .. tostring(err))
 end
 
 package.path = root .. "/?.lua;" .. package.path
+local ReadingLevel = require("wordwise_reading_level")
+assert(#ReadingLevel.levels == 3)
+assert(ReadingLevel.threshold("Basic") == "A2")
+assert(ReadingLevel.threshold("Intermediate") == "B1")
+assert(ReadingLevel.threshold("Advanced") == "C1")
+assert(ReadingLevel.threshold("Not a level") == nil)
+assert(ReadingLevel.resolve(nil, nil) == "Intermediate")
+assert(ReadingLevel.resolve(nil, "A1") == "Basic")
+assert(ReadingLevel.resolve(nil, "A2") == "Basic")
+assert(ReadingLevel.resolve(nil, "B1") == "Intermediate")
+assert(ReadingLevel.resolve(nil, "B2") == "Intermediate")
+assert(ReadingLevel.resolve(nil, "C1") == "Advanced")
+assert(ReadingLevel.resolve(nil, "C2") == "Advanced")
+assert(ReadingLevel.resolve("Basic", "C2") == "Basic")
+assert(ReadingLevel.resolve("INVALID", "C1") == "Advanced")
 local SHA256 = require("wordwise_sha256")
 local vectors = {
     { "", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
@@ -80,7 +96,7 @@ for _, unsafe in ipairs({
 }) do
     assert(not OTA.safe_archive_path(unsafe), unsafe)
 end
-assert(OTA.compare_versions("v0.2.13", "0.2.12") == 1)
+assert(OTA.compare_versions("v0.2.14", "0.2.13") == 1)
 assert(OTA.compare_versions("0.2.12-extra", "0.2.12") == nil)
 
 print("lua_syntax_sha256_and_morphology_ok")

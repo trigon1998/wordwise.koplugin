@@ -1,0 +1,24 @@
+name: Word Wise checks
+
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+  pull_request:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua interpreter
+        run: sudo apt-get update && sudo apt-get install -y lua5.3
+      - name: Check Lua syntax, SHA-256, morphology and reading levels
+        run: lua5.3 tests/test_lua.lua .
+      - name: Check definition bubble geometry and cleanup
+        run: lua5.3 tests/test_bubble.lua .
+      - name: Check offline dictionary and KOReader UI invariants
+        run: python3 tests/test_cefr.py
+      - name: Check WordNet grouping and sense ranking
+        run: python3 tests/test_builder.py

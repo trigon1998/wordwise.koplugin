@@ -1,17 +1,12 @@
 --[[--
-Word Wise: draw short definitions above difficult words as a per-page overlay
+Word Wise: underline difficult words and show offline definitions on tap
 on the ORIGINAL book — no copy, no file rewrite.
 
 How it works:
-  * A view module registered with ReaderView paints gloss strings on top of the
-    page. For the current page we walk the visible words, look each up in the
-    dictionary, and remember a screen box + gloss for the difficult ones.
-  * To leave room for the gloss above each line, we raise the document's line
-    spacing uniformly (setInterlineSpacePercent). Every line gets the same
-    height whether or not it carries a hint, and an interline change only
-    re-renders (it never rebuilds the DOM, so no "reload document?" prompt).
-  * Hints are recomputed on every page turn / re-render, so only the visible
-    page is ever processed.
+  * Walk visible words, selecting offline WordNet meanings using CEFR thresholds.
+  * Paint subtle underlines inside the original word boxes, without reflow.
+  * Tap an underline for a short meaning; tap the bubble for the sense picker.
+  * Recompute box positions on page turns and layout changes.
 
 @module koplugin.wordwise
 --]]--
@@ -20,12 +15,9 @@ local Blitbuffer = require("ffi/blitbuffer")
 local DataStorage = require("datastorage")
 local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
-local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
 local ConfirmBox = require("ui/widget/confirmbox")
 local WordWiseHintDialog = require("wordwise_hint_dialog")
-local RenderText = require("ui/rendertext")
-local SpinWidget = require("ui/widget/spinwidget")
 local UIManager = require("ui/uimanager")
 local Screen = require("device").screen
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
@@ -37,6 +29,8 @@ local _ = require("gettext")
 local T = require("ffi/util").template
 
 local WordWiseDB = require("wordwise_db")
+local ReadingLevel = require("wordwise_reading_level")
+local WordWiseBubble = require("wordwise_bubble")
 local WordWiseL10N = require("wordwise_l10n")
 local WordWiseOTA = require("wordwise_ota")
 
@@ -47,7 +41,6 @@ local WW_DIR = DataStorage:getDataDir() .. "/wordwise"
 local STATE_PATH = WW_DIR .. "/state.lua"
 local KNOWN_WORDS_PATH = WW_DIR .. "/known_words.lua"
 local CHECK_UPDATES_SETTING = "wordwise_check_updates"
-local MAX_INLINE_HINT_WIDTH = 240
 
 -- Directory this plugin was loaded from, used to find the bundled dictionary.
 local PLUGIN_ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("[^/\\]+$", "")
@@ -55,15 +48,7 @@ local BUNDLED_DB = PLUGIN_ROOT .. "wordwise.db"
 local PLUGIN_DIR = PLUGIN_ROOT:gsub("[/\\\\]$", "")
 local PLUGIN_VERSION = WordWiseOTA.current_version
 
-local CEFR_LEVELS = { "A1", "A2", "B1", "B2", "C1", "C2" }
 local CEFR_RANK = { A1 = 1, A2 = 2, B1 = 3, B2 = 4, C1 = 5, C2 = 6 }
-local DEFAULT_CEFR = "B1"
--- While hints are on we raise the book's line-spacing setting to this value, to
--- open a gloss gap above each line. Disabling restores the default spacing.
-local HINT_INTERLINE_MIN = 180
-local GLOSS_FONT_SIZE = 10        -- default hint font size (adjustable 6..20)
-local GLOSS_FONT_MIN = 6          -- selectable hint font-size range (slider)
-local GLOSS_FONT_MAX = 20
 local WORD_WALK_GUARD = 4000       -- hard cap on words scanned per page
 
 local WordWise = WidgetContainer:extend{
@@ -76,24 +61,17 @@ function WordWise:isSupportedDocument()
     return self.ui and self.ui.document and self.ui.rolling ~= nil and not self.ui.paging
 end
 
-function WordWise:getCEFRLevel()
-    local level = G_reader_settings:readSetting("wordwise_cefr_level") or DEFAULT_CEFR
-    return CEFR_RANK[level] and level or DEFAULT_CEFR
+-- Preserve six CEFR values in SQLite, exposing three reader proficiency modes.
+-- Legacy A1/A2 maps to Basic, B1/B2 to Intermediate and C1/C2 to Advanced.
+function WordWise:getReadingLevel()
+    return ReadingLevel.resolve(
+        G_reader_settings:readSetting("wordwise_reading_level"),
+        G_reader_settings:readSetting("wordwise_cefr_level")
+    )
 end
 
 function WordWise:getCEFRRank()
-    return CEFR_RANK[self:getCEFRLevel()] or CEFR_RANK[DEFAULT_CEFR]
-end
-
-function WordWise:getGlossFontSize()
-    return G_reader_settings:readSetting("wordwise_gloss_font_size") or GLOSS_FONT_SIZE
-end
-
--- Whether to draw the horizontal underline rule beneath each gloss. The
--- downward caret that points at the word is always drawn; this only controls
--- the "underline" part. On by default. Global, like the hint level.
-function WordWise:getShowUnderline()
-    return G_reader_settings:nilOrTrue("wordwise_show_underline")
+    return CEFR_RANK[ReadingLevel.threshold(self:getReadingLevel())]
 end
 
 function WordWise:getNotifyUpdates()
@@ -266,7 +244,7 @@ function WordWise:init()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
     -- infofont is NotoSans (proportional), suitable for compact glosses.
-    self.gloss_face = Font:getFace("infofont", self:getGlossFontSize())
+    self.bubble = WordWiseBubble.new()
     self.hints = {}
     self:getState()
     -- Register the paint-only overlay. Tap handling is registered separately on
@@ -376,53 +354,22 @@ function WordWise:onDictButtonsReady(dict_popup, buttons)
     })
 end
 
--- The line spacing the current book is set to (crengine's configurable value,
--- the same one the Font menu edits and the sidecar persists).
-function WordWise:currentLineSpacing()
-    return (self.ui.font and self.ui.font.configurable
-        and self.ui.font.configurable.line_spacing) or 100
-end
-
--- The line spacing to fall back to as "default": the reader's global default if
--- set, else KOReader's built-in medium default (100). Used only when an older
--- plugin version did not capture the original per-book value.
-function WordWise:defaultLineSpacing()
-    return G_reader_settings:readSetting("copt_line_spacing")
-        or (G_defaults and G_defaults:readSetting("DCREREADER_CONFIG_LINE_SPACE_PERCENT_MEDIUM"))
-        or 100
-end
-
--- Turn the raised gloss spacing on/off by editing the book's ACTUAL line-spacing
--- setting. Enabling captures the exact per-book value; disabling restores it
--- unless the reader deliberately changed spacing while Word Wise was active.
-function WordWise:setLineSpacing(on)
+-- Previous releases forced 180% spacing for inline glosses. Restore the
+-- exact saved per-book value, unless the reader changed it themselves.
+function WordWise:restoreLegacyLineSpacing()
     if not self:isSupportedDocument() then return end
-    local conf = self.ui.font and self.ui.font.configurable
-    if not conf then return end
     local ds = self.ui.doc_settings
-    local previous_key = "wordwise_previous_line_spacing"
-    local applied_key = "wordwise_applied_line_spacing"
-    if on then
-        if ds and not ds:has(previous_key) then
-            ds:saveSetting(previous_key, conf.line_spacing)
-        end
-        conf.line_spacing = math.max(conf.line_spacing or self:defaultLineSpacing(), HINT_INTERLINE_MIN)
-        if ds then ds:saveSetting(applied_key, conf.line_spacing) end
-    else
-        local previous = ds and ds:readSetting(previous_key)
-        local applied = (ds and ds:readSetting(applied_key)) or HINT_INTERLINE_MIN
-        -- If the reader changed spacing while Word Wise was enabled, preserve
-        -- that explicit choice. Otherwise restore the exact captured value.
-        if conf.line_spacing == applied then
-            conf.line_spacing = previous or self:defaultLineSpacing()
-        end
-        if ds then
-            ds:delSetting(previous_key)
-            ds:delSetting(applied_key)
-        end
+    local conf = self.ui.font and self.ui.font.configurable
+    if not ds or not conf or not ds:has("wordwise_previous_line_spacing") then return end
+    local previous = ds:readSetting("wordwise_previous_line_spacing")
+    local applied = ds:readSetting("wordwise_applied_line_spacing")
+    ds:delSetting("wordwise_previous_line_spacing")
+    ds:delSetting("wordwise_applied_line_spacing")
+    if type(previous) == "number" and conf.line_spacing == applied then
+        conf.line_spacing = previous
+        self.ui.document:setInterlineSpacePercent(previous)
+        self.ui:handleEvent(Event:new("UpdatePos"))
     end
-    self.ui.document:setInterlineSpacePercent(conf.line_spacing)
-    self.ui:handleEvent(Event:new("UpdatePos"))
 end
 
 function WordWise:scheduleHintRefresh()
@@ -444,6 +391,7 @@ end
 function WordWise:onReaderReady()
     self:setupTouchZones()
     if not self:isSupportedDocument() then return end
+    self:restoreLegacyLineSpacing()
     if self:isEnabled() and self:hasDB() then
         -- Coalesce the initial reader event with any immediate PosUpdate or
         -- rerender event emitted while the document settles.
@@ -467,6 +415,7 @@ function WordWise:onCloseDocument()
         self._hint_dialog = nil
     end
     self:dismissOTAStatus()
+    if self.bubble then self.bubble:close() end
     self:flushState()
     if self.db then
         self.db:close()
@@ -475,7 +424,6 @@ function WordWise:onCloseDocument()
     self._db_path = nil
     self._db_fallback_notified = nil
     self.hints = {}
-    self._gloss_metrics = nil
 end
 
 -- Recompute once on the next UI tick. KOReader may emit PosUpdate, PageUpdate,
@@ -537,8 +485,8 @@ function WordWise:chooseHintEntry(entries, selected_key, cefr_rank)
 end
 
 function WordWise:computePageHints()
+    if self.bubble then self.bubble:close() end
     self.hints = {}
-    self.text_col = nil
     if not (self:isEnabled() and self:isSupportedDocument()) then return end
     local db = self:getDB()
     if not db then return end
@@ -548,7 +496,6 @@ function WordWise:computePageHints()
     if not start_xp then return end
     local cefr_rank = self:getCEFRRank()
 
-    local first_xp, last_xp
     local xp = doc:getNextVisibleWordStart(start_xp)
     local guard = 0
     while xp and guard < WORD_WALK_GUARD do
@@ -556,8 +503,6 @@ function WordWise:computePageHints()
         if not doc:isXPointerInCurrentPage(xp) then break end
         local end_xp = doc:getNextVisibleWordEnd(xp)
         if not end_xp then break end
-        first_xp = first_xp or xp
-        last_xp = end_xp
         local word = doc:getTextFromXPointers(xp, end_xp)
         if word then
             local key = lookupKey(word)
@@ -585,17 +530,7 @@ function WordWise:computePageHints()
         xp = nxt
     end
 
-    if first_xp and last_xp then
-        local line_boxes = doc:getScreenBoxesFromPositions(first_xp, last_xp, true)
-        local lo, hi
-        for _, b in ipairs(line_boxes or {}) do
-            if b.w > 0 then
-                if not lo or b.x < lo then lo = b.x end
-                if not hi or b.x + b.w > hi then hi = b.x + b.w end
-            end
-        end
-        if lo and hi and hi > lo then self.text_col = { left = lo, right = hi } end
-    end
+
 end
 
 -- Hit-test only rendered hints. A miss deliberately returns false so KOReader's
@@ -623,10 +558,34 @@ end
 
 function WordWise:onHintTap(ges)
     if not (self:isEnabled() and ges and self.ui and self.ui.view) then return false end
-    -- getScreenBoxesFromPositions() returns screen-space boxes, matching ges.pos.
+    local selected = self.ui.highlight
+    if selected and (selected.hold_pos or selected.selected_text or selected.select_mode) then
+        return false -- KOReader owns the text selection.
+    end
     local pos = ges.pos
+    if not pos then return false end
+
+    if self.bubble and self.bubble:contains(pos) then
+        local hint = self.bubble.hint
+        self.bubble:close()
+        self:showHintActions(hint) -- Existing sense picker / Know / Dictionary.
+        return true
+    end
     for _, hint in ipairs(self.hints or {}) do
-        if pointInBox(pos, hint.hit_box or hint.box) then return self:showHintActions(hint) end
+        if pointInBox(pos, hint.box) then
+            if self.bubble then
+                local reader_font = self.ui.font and self.ui.font.configurable
+                local size = reader_font and reader_font.font_size or 20
+                self.bubble:show(hint, size, self:tr("tap_for_details"))
+                UIManager:setDirty("all", "ui")
+            end
+            return true
+        end
+    end
+    if self.bubble and self.bubble:close() then
+        -- Dismissal never also turns the page.
+        UIManager:setDirty("all", "ui")
+        return true
     end
     return false
 end
@@ -650,228 +609,33 @@ function WordWise:setupTouchZones()
     self._touch_zones_ready = true
 end
 
-local GLOSS_HGAP = 8   -- minimum horizontal gap between two glosses on a line
-local CARET_DEPTH = 7  -- height (and half-width) of the downward caret
-
--- Draw a small downward caret at cx that points to the
--- exact word below it, optionally flanked by a thin horizontal rule spanning
--- [x0, x1] (the "underline"). The caret always identifies the word; with_rule
--- adds the underline when the reader wants it.
-local function drawWordMarker(bb, x0, x1, cx, ytop, color, with_rule)
-    local half = CARET_DEPTH
-    if cx - half < x0 then cx = x0 + half end
-    if cx + half > x1 then cx = x1 - half end
-    if with_rule then
-        if cx - half > x0 then bb:paintRect(x0, ytop, (cx - half) - x0, 1, color) end
-        if x1 > cx + half then bb:paintRect(cx + half, ytop, x1 - (cx + half), 1, color) end
-    end
-    -- two diagonals meeting at the tip (cx, ytop + half), pointing down
-    for i = 0, half do
-        bb:setPixel(cx - half + i, ytop + i, color)
-        bb:setPixel(cx + half - i, ytop + i, color)
-    end
-end
-
--- Font-level vertical metrics (max ascent/descent) for the current gloss face,
--- the same for every gloss no matter which glyphs a given string contains.
--- paintHints lays glosses out with these instead of each string's own ink
--- extents (sizeUtf8Text's y_top/y_bottom), so the caret always sits the same
--- distance below the baseline. Per-string extents made a gloss with no
--- descenders (e.g. "an outdoor meal") pull its caret right up against the
--- letters and look cramped, while one with descenders ("a background scene or
--- setting") looked fine. Cached; recomputed when the face changes (font size).
-function WordWise:getGlossMetrics()
-    local face = self.gloss_face
-    local m = self._gloss_metrics
-    if m and m.face == face then return m end
-    local ascent, descent
-    local ok, height, asc = pcall(function()
-        return face.ftsize:getHeightAndAscender()
-    end)
-    if ok and height and asc then
-        ascent = math.floor(asc + 0.5)
-        descent = math.ceil(height - asc)
-    else
-        -- Fallback for builds without the freetype metrics API: probe a string
-        -- spanning the full ascender + descender range of the face.
-        local sz = RenderText:sizeUtf8Text(0, 10000, face, "Agjpqy", true, false)
-        ascent, descent = sz.y_top, sz.y_bottom
-    end
-    if descent < 0 then descent = 0 end
-    m = { face = face, ascent = ascent, descent = descent }
-    self._gloss_metrics = m
-    return m
-end
-
+-- Minimal, e-ink-friendly wavy underline inside each matched word box.
+-- No added text, collision layout or reader line-spacing modifications.
 function WordWise:paintHints(bb, x, y)
-    if not (self:isEnabled() and self.hints and #self.hints > 0) then return end
-    local screen_w, screen_h = bb:getWidth(), bb:getHeight()
-    local color = Blitbuffer.COLOR_BLACK
-    local show_underline = self:getShowUnderline()
-
-    local left_bound, right_bound = 2, screen_w - 2
-    if self.text_col then
-        left_bound = self.text_col.left
-        right_bound = self.text_col.right
-    else
-        local ok, margins = pcall(function() return self.ui.document:getPageMargins() end)
-        if ok and margins and margins.left and margins.right then
-            left_bound = margins.left
-            right_bound = screen_w - margins.right
-        end
-    end
-
-    local GLOSS_RULE_GAP = 1
-    local spacing = self:currentLineSpacing()
-    local metrics = self:getGlossMetrics()
-    local ascent, descent = metrics.ascent, metrics.descent
-    local max_hint_width = math.min(MAX_INLINE_HINT_WIDTH,
-        math.max(120, math.floor((right_bound - left_bound) * 0.48)))
-    local safe_top = 4
-    local safe_bottom = screen_h - 4
-    local items = {}
-
-    for _, h in ipairs(self.hints) do
-        local full_text = h.entry and h.entry.gloss or h.text or ""
-        -- Width measurement is relatively expensive and the same hint may be
-        -- painted several times without a new page layout. Keep this tiny
-        -- cache on the current-page hint object; computePageHints replaces the
-        -- hint table, so it cannot retain data across pages.
-        local width_cache = h._render_cache
-        if not width_cache or width_cache.face ~= self.gloss_face
-                or width_cache.max_width ~= max_hint_width
-                or width_cache.full_text ~= full_text then
-            local full_w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, full_text, true, false).x
-            local display_text = full_text
-            if full_w > max_hint_width then
-                display_text = RenderText:truncateTextByWidth(full_text, self.gloss_face, max_hint_width, true, false)
-            end
-            local text_w = RenderText:sizeUtf8Text(0, screen_w, self.gloss_face, display_text, true, false).x
-            width_cache = {
-                face = self.gloss_face, max_width = max_hint_width,
-                full_text = full_text, display_text = display_text,
-                text_w = text_w,
-            }
-            h._render_cache = width_cache
-        end
-        local display_text = width_cache.display_text
-        local text_w = width_cache.text_w
-        local tx = math.floor(h.box.x + (h.box.w - text_w) / 2 + 0.5)
-        local max_x = right_bound - text_w
-        if tx > max_x then tx = max_x end
-        if tx < left_bound then tx = left_bound end
-
-        local leading = h.box.h * (1 - 100 / spacing)
-        local word_top = h.box.y + math.floor(leading / 2)
-        local word_bottom = h.box.y + h.box.h - math.floor(leading / 2)
-        local above_baseline = math.floor(math.min(
-            h.box.y + (ascent - descent) / 2,
-            word_top - 1 - descent
-        ) + 0.5)
-        local above_top = above_baseline - ascent
-        local above_marker_y = math.min(above_baseline + descent + GLOSS_RULE_GAP,
-            word_top - CARET_DEPTH - 1)
-
-        -- Prefer the normal above-word placement. If the full ink rectangle
-        -- would enter the top safe inset, move the whole unit below the word.
-        local below_marker_y = word_bottom + 1
-        local below_baseline = math.floor(below_marker_y + CARET_DEPTH + GLOSS_RULE_GAP + ascent + 0.5)
-        local below_top = below_baseline - ascent
-        local below = above_top < safe_top
-        local baseline = below and below_baseline or above_baseline
-        local marker_y = below and below_marker_y or above_marker_y
-        local text_top = below and below_top or above_top
-        local text_bottom = baseline + descent
-        -- Word boxes on a single rendered line can differ by a few pixels due
-        -- to glyph ascent/descent. Quantize the band so collision detection
-        -- treats them as one row instead of allowing overlap.
-        local band_size = math.max(12, h.box.h * 0.5)
-        local band = math.floor((h.box.y + (below and h.box.h or 0)) / band_size + 0.5)
-
-        items[#items + 1] = {
-            h = h, text = display_text, full_text = full_text,
-            x0 = tx, x1 = tx + text_w, band = band,
-            cefr_rank = (h.entry and h.entry.cefr_rank) or 99,
-            marker_y = marker_y, baseline = baseline, text_top = text_top,
-            text_bottom = text_bottom, below = below,
-            word_cx = math.floor(h.box.x + h.box.w / 2 + 0.5),
-        }
-    end
-
-    -- De-overlap each above/below band. We first try the word-centered
-    -- position, then search the gaps around already placed hints, choosing the
-    -- legal position closest to the word. Only a hint that cannot fit anywhere
-    -- in the line is dropped.
-    table.sort(items, function(a, b)
-        if a.band ~= b.band then return a.band < b.band end
-        if a.cefr_rank ~= b.cefr_rank then return a.cefr_rank > b.cefr_rank end
-        return a.x0 < b.x0
-    end)
-    local placed = {}
-    local function overlaps(x0, x1, list)
-        for _, iv in ipairs(list or {}) do
-            if x0 < iv[2] + GLOSS_HGAP and x1 + GLOSS_HGAP > iv[1] then return true end
-        end
-        return false
-    end
-    local function find_slot(it, list)
-        local preferred = it.x0
-        local candidates = { preferred, left_bound, right_bound - (it.x1 - it.x0) }
-        for _, iv in ipairs(list or {}) do
-            candidates[#candidates + 1] = iv[2] + GLOSS_HGAP
-            candidates[#candidates + 1] = iv[1] - GLOSS_HGAP - (it.x1 - it.x0)
-        end
-        local best, best_distance
-        for _, candidate in ipairs(candidates) do
-            local width = it.x1 - it.x0
-            local x0 = math.max(left_bound, math.min(candidate, right_bound - width))
-            local x1 = x0 + width
-            if x1 <= right_bound and not overlaps(x0, x1, list) then
-                local distance = math.abs(x0 - preferred)
-                if not best_distance or distance < best_distance then
-                    best, best_distance = x0, distance
-                end
-            end
-        end
-        return best
-    end
-    for _, it in ipairs(items) do
-        if it.text_top >= safe_top and it.text_bottom <= safe_bottom then
-            local list = placed[it.band]
-            if not list then list = {}; placed[it.band] = list end
-            local x0 = find_slot(it, list)
-            if x0 then
-                local width = it.x1 - it.x0
-                it.x0, it.x1 = x0, x0 + width
-                list[#list + 1] = { it.x0, it.x1 }
-                local hit_top = math.min(it.text_top, it.h.box.y) - 5
-                local hit_bottom = math.max(it.text_bottom, it.h.box.y + it.h.box.h) + 5
-                local hit_box = it.h.hit_box or {}
-                hit_box.x = math.max(left_bound, it.x0 - 5)
-                hit_box.y = math.max(0, hit_top)
-                hit_box.w = math.min(right_bound, it.x1 + 5) - math.max(left_bound, it.x0 - 5)
-                hit_box.h = hit_bottom - math.max(0, hit_top)
-                it.h.hit_box = hit_box
-                RenderText:renderUtf8Text(bb, it.x0, it.baseline, self.gloss_face,
-                    it.text, true, false, color)
-                if it.below then
-                    -- Below-word hints use an upward-pointing marker.
-                    local half = CARET_DEPTH
-                    local cx = math.max(it.x0 + half, math.min(it.word_cx, it.x1 - half))
-                    if show_underline then
-                        if cx - half > it.x0 then bb:paintRect(it.x0, it.marker_y, cx - half - it.x0, 1, color) end
-                        if it.x1 > cx + half then bb:paintRect(cx + half, it.marker_y, it.x1 - cx - half, 1, color) end
-                    end
-                    for i = 0, half do
-                        bb:setPixel(cx - half + i, it.marker_y + half - i, color)
-                        bb:setPixel(cx + half - i, it.marker_y + half - i, color)
-                    end
-                else
-                    drawWordMarker(bb, it.x0, it.x1, it.word_cx, it.marker_y, color, show_underline)
+    if not self:isEnabled() then return end
+    x, y = x or 0, y or 0
+    local step = math.max(1, math.floor(Screen:scaleBySize(2)))
+    local thickness = math.max(1, math.floor(Screen:scaleBySize(1)))
+    local wave = { 0, 1, 2, 1 }
+    local width, height = Screen:getWidth(), Screen:getHeight()
+    for _, hint in ipairs(self.hints or {}) do
+        local box = hint.box
+        if box and box.w > 0 and box.h >= thickness + 3 then
+            local left = math.max(0, math.floor(box.x))
+            local right = math.min(width, math.ceil(box.x + box.w))
+            local baseline = math.floor(box.y + box.h - thickness - 3)
+            for offset = 0, right - left - 1, step do
+                local rise = wave[(math.floor(offset / step) % #wave) + 1]
+                local line_y = baseline + rise
+                if line_y >= 0 and line_y + thickness <= height then
+                    bb:paintRect(x + left + offset, y + line_y,
+                        math.min(step, right - left - offset), thickness,
+                        Blitbuffer.COLOR_GRAY)
                 end
             end
         end
     end
+    if self.bubble then self.bubble:paint(bb, x, y) end
 end
 
 -- Recompute + repaint for settings that do not relayout the document.
@@ -880,21 +644,9 @@ function WordWise:refresh()
     UIManager:setDirty("all", "ui")
 end
 
-function WordWise:setCEFRLevel(value)
-    if not CEFR_RANK[value] then return end
-    G_reader_settings:saveSetting("wordwise_cefr_level", value)
-    self:refresh()
-end
-
-function WordWise:setGlossFontSize(value)
-    G_reader_settings:saveSetting("wordwise_gloss_font_size", value)
-    -- rebuild the cached face; paintHints re-measures gloss widths from it
-    self.gloss_face = Font:getFace("infofont", value)
-    self:refresh()
-end
-
-function WordWise:setShowUnderline(on)
-    G_reader_settings:saveSetting("wordwise_show_underline", on)
+function WordWise:setReadingLevel(level)
+    if not ReadingLevel.threshold(level) then return end
+    G_reader_settings:saveSetting("wordwise_reading_level", level)
     self:refresh()
 end
 
@@ -1034,9 +786,12 @@ function WordWise:setEnabled(on)
         return
     end
     self.ui.doc_settings:saveSetting("wordwise_enabled", on) -- per-book
-    self:setLineSpacing(on) -- relayout + repaint; onPosUpdate recomputes hints
-    if not on then
+    self:restoreLegacyLineSpacing()
+    if on then
+        self:refresh()
+    else
         self.hints = {}
+        if self.bubble then self.bubble:close() end
         UIManager:setDirty("all", "ui")
     end
 end
@@ -1061,37 +816,30 @@ end
 function WordWise:getSubMenu()
     return {
         {
-            text = self:tr("show_inline"),
+            text = self:tr("show_underlines"),
             checked_func = function() return self:isEnabled() end,
             enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
             callback = function() self:setEnabled(not self:isEnabled()) end,
         },
         {
             text_func = function()
-                return self:tr("cefr_level", self:getCEFRLevel())
+                return self:tr("reading_level", self:getReadingLevel())
             end,
             enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
             sub_item_table_func = function()
                 local items = {}
-                for _, level in ipairs(CEFR_LEVELS) do
+                for _, level in ipairs(ReadingLevel.levels) do
                     items[#items + 1] = {
                         text = level,
-                        checked_func = function() return self:getCEFRLevel() == level end,
+                        checked_func = function() return self:getReadingLevel() == level end,
                         radio = true,
                         callback = function()
-                            G_reader_settings:saveSetting("wordwise_cefr_level", level)
-                            self:refresh()
+                            self:setReadingLevel(level)
                         end,
                     }
                 end
                 return items
             end,
-        },
-        {
-            text = self:tr("underline"),
-            checked_func = function() return self:getShowUnderline() end,
-            enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
-            callback = function() self:setShowUnderline(not self:getShowUnderline()) end,
         },
         {
             text_func = function()
@@ -1120,27 +868,6 @@ function WordWise:getSubMenu()
                         enabled_func = function() return false end,
                     },
                 }
-            end,
-        },
-        {
-            text_func = function()
-                return self:tr("font_size_menu", self:getGlossFontSize())
-            end,
-            enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
-            keep_menu_open = true,
-            callback = function(touchmenu_instance)
-                UIManager:show(SpinWidget:new{
-                    title_text = self:tr("font_size_title"),
-                    value = self:getGlossFontSize(),
-                    value_min = GLOSS_FONT_MIN,
-                    value_max = GLOSS_FONT_MAX,
-                    default_value = GLOSS_FONT_SIZE,
-                    keep_shown_on_apply = true, -- live preview as you slide/apply
-                    callback = function(spin)
-                        self:setGlossFontSize(spin.value)
-                        if touchmenu_instance then touchmenu_instance:updateItems() end
-                    end,
-                })
             end,
         },
     }

@@ -1,0 +1,87 @@
+name: Publish Word Wise v0.2.14 OTA
+
+# Single-release trigger: merging the reviewed release notes into main.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - RELEASE_NOTES_v0.2.14.md
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out merged main revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify versions and release prerequisites
+        run: |
+          test "$GITHUB_REPOSITORY" = "trigon1998/wordwise.koplugin"
+          test "$GITHUB_REF" = "refs/heads/main"
+          grep -Fq 'version = "0.2.14"' _meta.lua
+          grep -Fq 'current_version = "0.2.14"' wordwise_ota.lua
+          for file in main.lua _meta.lua wordwise_db.lua wordwise_hint_dialog.lua wordwise_bubble.lua wordwise_reading_level.lua wordwise_l10n.lua wordwise_ota.lua wordwise_sha256.lua wordwise.db; do
+            test -f "$file"
+          done
+
+      - name: Install Lua
+        run: sudo apt-get update -qq && sudo apt-get install -y lua5.3
+
+      - name: Run release regressions
+        run: |
+          lua5.3 tests/test_lua.lua .
+          lua5.3 tests/test_bubble.lua .
+          python3 tests/test_cefr.py
+          python3 tests/test_builder.py
+
+      - name: Build SHA-256 verified KOReader OTA archive
+        run: |
+          git archive --format=zip --prefix=wordwise.koplugin/ \
+            --output=wordwise.koplugin.zip HEAD
+          python3 - <<'PY'
+          import pathlib
+          import zipfile
+          archive = zipfile.ZipFile("wordwise.koplugin.zip")
+          infos = archive.infolist()
+          required = {
+              "main.lua", "_meta.lua", "wordwise_db.lua",
+              "wordwise_hint_dialog.lua", "wordwise_bubble.lua",
+              "wordwise_reading_level.lua", "wordwise_l10n.lua",
+              "wordwise_ota.lua", "wordwise_sha256.lua", "wordwise.db",
+          }
+          prefix = "wordwise.koplugin/"
+          names = {i.filename[len(prefix):] for i in infos if not i.is_dir()}
+          assert len(infos) <= 512, "too many archive entries"
+          assert sum(i.file_size for i in infos) <= 64 * 1024 * 1024, "unpacked archive too large"
+          assert all(i.filename.startswith(prefix) for i in infos)
+          assert all(".." not in pathlib.PurePosixPath(i.filename).parts for i in infos)
+          assert required <= names, f"missing: {required - names}"
+          meta = archive.read(prefix + "_meta.lua").decode("utf-8")
+          assert 'version = "0.2.14"' in meta
+          print("OTA zip structure validated")
+          PY
+          unzip -t wordwise.koplugin.zip
+          sha256sum wordwise.koplugin.zip > wordwise.koplugin.zip.sha256
+          sha256sum --check wordwise.koplugin.zip.sha256
+
+      - name: Publish GitHub Release and OTA files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v0.2.14
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite it."
+            exit 1
+          fi
+          gh release create "$TAG" \
+            wordwise.koplugin.zip wordwise.koplugin.zip.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "Word Wise v0.2.14 — Offline Word Sense" \
+            --notes-file RELEASE_NOTES_v0.2.14.md \
+            --latest
