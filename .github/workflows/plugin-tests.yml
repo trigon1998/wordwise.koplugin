@@ -27,6 +27,8 @@ jobs:
         run: lua5.3 tests/test_reviewed_labels.lua .
       - name: Check sense-label candidate ranking
         run: python3 tests/test_synonym_candidates.py
+      - name: Check two-person editorial export gate
+        run: python3 tests/test_sense_review_export.py
       - name: Check offline dictionary and KOReader UI invariants
         run: python3 tests/test_cefr.py
       - name: Check WordNet grouping and sense ranking
