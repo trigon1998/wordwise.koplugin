@@ -2,102 +2,70 @@
 
 ## 1. Project scope
 
-This project is an Android-focused fork of [asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin). It is a KOReader plugin written in Lua that paints compact vocabulary hints on top of the original document page. It does not rewrite EPUB/PDF content and does not create a second copy of the book.
+This is an Android-focused offline KOReader vocabulary overlay fork of
+[asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin).
+It does not modify source book files or query AI services. The bundled
+SQLite database is sourced from CEFR-J, Octanove and Open English WordNet.
 
-The fork deliberately removes Kindle/Amazon corpus discovery and conversion. Its bundled dictionary is generated from open vocabulary profiles and open English WordNet data, while the user may provide a separate database under KOReader's data directory. The supported target is KOReader on Android and other KOReader builds with the same reflowable-document APIs.
+**Current reader workflow:**
 
-The main product requirements are:
+1. `WordWise:computePageHints()` traverses words on the visible reflowable page.
+2. `wordwise_reading_level.lua` maps Basic → A2+, Intermediate → B1+, Advanced → C1+.
+3. The page overlay paints a subtle wavy underline inside each eligible word box.
+4. Tapping an underlined word creates a `wordwise_bubble.lua` definition bubble.
+5. Tapping that bubble opens the existing `wordwise_hint_dialog.lua` sense picker
+   with Know/Show, Dictionary and Cancel.
+6. A tap outside the bubble dismisses it without turning a page; taps on
+   unmarked text continue to the normal KOReader touch zones.
 
-| Area | Current behavior |
-|---|---|
-| Document support | Reflowable/crengine documents. PDF and fixed-layout documents are not supported by the overlay engine. |
-| Difficulty model | CEFR levels `A1`, `A2`, `B1`, `B2`, `C1`, and `C2`, replacing the upstream 1–5 difficulty setting. |
-| Dictionary | Multiple senses per lemma, with CEFR level, part of speech, stable sense key, and data source. |
-| Inline display | A bounded single-line gloss with measured-width ellipsis. A long gloss is available in full through the hint popup. |
-| Layout | Hint placement above the word when possible, below the word when the top safe inset would be crossed, and collision-aware horizontal placement. |
-| Interaction | Tapping a hint opens sense selection, lemma-wide Know/Show, KOReader Dictionary, and Cancel actions. |
-| User state | Known words and selected senses are stored outside the plugin directory and survive plugin replacement. |
-| Updates | The OTA updater checks GitHub Releases from the fork repository and installs only a validated release asset. |
+The six original CEFR bands and the multi-sense SQLite schema stay unchanged;
+no semantic selection based on context is performed. A user-selected sense
+continues to override the automatically chosen dictionary sense.
 
-## 2. Repository layout
+## 2. Source layout
 
-```text
-wordwise.koplugin/
-├── _meta.lua                         # KOReader plugin metadata
-├── main.lua                          # lifecycle, menu, overlay, touch, popup, state
-├── wordwise_db.lua                   # SQLite lookup and CEFR compatibility layer
-├── wordwise_l10n.lua                 # plugin-specific labels and translations
-├── wordwise.db                       # bundled CEFR/multi-sense database
-├── README.md                         # user-facing overview and installation notes
-├── DEVELOPMENT.md                    # this development guide
-├── tests/
-│   └── test_cefr.py                  # database and static regression checks
-└── tools/
-    ├── build_cefr_dict.py            # curated gloss importer
-    ├── build_cefr_wordnet_dict.py    # CEFR + WordNet multi-sense builder
-    ├── open_glosses.tsv              # editable curated gloss source
-    ├── cefrj-vocabulary-profile-1.5.csv
-    └── octanove-vocabulary-profile-c1c2-1.0.csv
-```
+- `main.lua`: reader lifecycle, visible-word scanning, underline painting,
+  touch-zone dispatch, settings, persisted user choices, OTA UI
+- `wordwise_bubble.lua`: short definition frame, anchor geometry and painting
+- `wordwise_reading_level.lua`: three proficiency levels and backward mapping
+  for old `wordwise_cefr_level` settings
+- `wordwise_hint_dialog.lua`: complete dictionary meaning selection and actions
+- `wordwise_db.lua`, `wordwise.db`: offline WordNet definitions and CEFR labels
+- `wordwise_ota.lua`: release-asset verification and updater
+- `tests/test_lua.lua`, `tests/test_cefr.py`, `tests/test_builder.py`:
+  syntax, offline schema, UI invariants, vocabulary and updater regressions
 
-The plugin runtime must be installed as a directory named exactly `wordwise.koplugin`. `main.lua` must be directly inside that directory. The bundled database must be adjacent to `main.lua` so the plugin can locate it through its own module path.
+The directory must be named `wordwise.koplugin` in KOReader's plugins path.
 
-## 3. Runtime architecture
+## 3. Reader integration
 
-`main.lua` owns the plugin lifecycle. During initialization it registers the main-menu item, creates the gloss font, opens the paint-only ReaderView module, registers touch zones, and initializes persistent state. The overlay is intentionally paint-only: the document continues to be rendered by KOReader, while Word Wise draws the hint text and marker on top.
+The plugin registers a ReaderView view module that paints onto the existing
+page blitbuffer without creating a second document. It obtains visible-word
+XPointer ranges and screen boxes from KOReader's reflowable/crengine interface.
+Fixed-layout PDFs and DjVu are not supported.
 
-The page flow is:
+**Do not increase line spacing** for underlines. At startup,
+`restoreLegacyLineSpacing()` removes the old inline-gloss settings and restores
+the saved spacing if the reader hasn't changed it. New activations never
+call `setInterlineSpacePercent` except for this one-time migration.
 
-```text
-KOReader opens/reflows page
-        │
-        ▼
-WordWise:computePageHints()
-        │
-        ├── obtain visible words and screen boxes
-        ├── lookup all dictionary senses
-        ├── apply CEFR threshold
-        ├── skip known lemmas
-        ├── select saved sense or first eligible sense
-        └── store hint geometry and hit-box data
-        │
-        ▼
-ReaderView overlay calls WordWise:paintHints()
-        │
-        ├── measure gloss width
-        ├── truncate long glosses with `…`
-        ├── place above or below the word
-        ├── find a non-overlapping horizontal slot
-        └── paint text, marker, and optional underline
-```
+Touch handling returns false on any unmarked word when no bubble is open,
+preserving existing page-turn and selection behaviors. The popup and source
+word are the only interactive areas owned by Word Wise; its simple bubble
+is not a separate modal. Any page turn or reflow clears the bubble and
+recomputes the visible word boxes.
 
-The stability-critical interfaces are KOReader's visible-word enumeration, screen-box calculation, line-spacing adjustment, ReaderView overlay registration, and reflow/page-position callbacks. Changes to dictionary data should not modify these interfaces.
+## 4. Reading level mapping
 
-The plugin uses KOReader's documented ReaderView and widget APIs rather than directly modifying the document renderer.[1] The touch behavior follows the same principle as KOReader's highlight interaction: a touch miss is not consumed, allowing normal Android page-turn zones to continue processing the gesture.[2]
+| Mode | Minimum CEFR | Eligible bands |
+| --- | --- | --- |
+| Basic | A2 | A2, B1, B2, C1, C2 |
+| Intermediate | B1 | B1, B2, C1, C2 |
+| Advanced | C1 | C1, C2 |
 
-## 4. CEFR model and stability
-
-The runtime order is:
-
-```text
-A1 < A2 < B1 < B2 < C1 < C2
-```
-
-The menu value is a **threshold**. If the selected threshold is `B2`, the plugin permits `B2`, `C1`, and `C2`; it hides `A1` through `B1`. The database stores the normalized level as text and the runtime maps it to an integer rank only for comparison.
-
-The CEFR migration is low risk for page stability because it changes only database lookup and hint filtering. It does not change visible-word traversal, screen-box anchoring, line-spacing hooks, overlay painting, or reflow callbacks. The bundled database uses CEFR as authoritative data. The runtime retains a compatibility path for old upstream databases containing a `difficulty` column, but the five old bands are only an approximate migration and must not be treated as audited CEFR classification.
-
-When adding another level system, keep the following boundaries:
-
-| Concern | Correct location |
-|---|---|
-| Level normalization and rank | `wordwise_db.lua` |
-| Threshold menu values | `main.lua` and `wordwise_l10n.lua` |
-| Dataset-to-level mapping | `tools/build_cefr_wordnet_dict.py` |
-| Geometry and drawing | `main.lua`, independent of level names |
-| User selection persistence | KOReader data directory state file |
-
-A dictionary builder must never invent a CEFR level. A row without an audited mapping is reported and omitted from the generated database.
+Legacy setting values map A1/A2 → Basic, B1/B2 → Intermediate and C1/C2
+→ Advanced, unless the new reading-level preference has already been saved.
+Do not change or rebuild the database to achieve this filtering.
 
 ## 5. Database contract
 
@@ -167,40 +135,25 @@ PY
 
 Do not add Kindle/Amazon-derived data to the public build. Keep raw source files and attribution in the repository so that another developer can reproduce the database.
 
-## 7. Hint rendering and collision handling
+## 7. Underline rendering and bubble geometry
 
-The database first supplies a concise `short_def`; its 72-character/12-word limit is a content rule rather than a rendering approximation. The inline gloss width is then measured using KOReader's rendering metrics, not by counting characters. The current maximum is controlled by `MAX_INLINE_HINT_WIDTH`. If the concise definition still exceeds the available width, `RenderText:truncateTextByWidth` produces a string ending in `…`. `full_def` remains in the hint object and is shown in the popup title.
+`WordWise:paintHints()` paints a one-pixel gray wave near the bottom of
+each matched word's screen box. There is no above-line gloss, measured-width
+truncation, collision solver or enlarged line spacing.
 
-The vertical placement algorithm calculates the word box, gloss metrics, top/bottom safe insets, and marker position. It prefers an above-word gloss. If the gloss would cross the top safe inset, the entire unit is moved below the word and the marker points upward.
+`wordwise_bubble.lua` creates a light framed TextBoxWidget for the short
+definition and a brief instruction to tap for more information. The bubble
+is anchored above or below the tapped word and clamped to screen edges.
+It is freed on page navigation, settings refresh, close, or replacement.
 
-For horizontal collisions, the renderer:
+## 8. Interaction and popup
 
-1. quantizes nearby word boxes into a line band;
-2. sorts candidates by line band and CEFR rank, preferring harder words;
-3. tries the word-centered position;
-4. tries the left and right gaps around already placed hints;
-5. checks the minimum horizontal gap; and
-6. drops a lower-priority hint only if no legal slot remains.
-
-This is preferable to drawing all hints at their original centered positions. A crowded line may still omit some hints, but it must not render overlapping definitions that are unreadable or visually misleading.
-
-Any future layout change must preserve `hit_box` updates after the final horizontal position is chosen. A painted hint that cannot be tapped is a functional regression.
-
-## 8. Hint interaction and popup
-
-A tap is accepted only when its screen coordinates intersect a rendered hint hit box. A tap outside all hints returns `false`, so KOReader can continue with its normal touch handling.
-
-The popup has three logical areas:
-
-| Area | Behavior |
-|---|---|
-| Title | Shows the selected word and the full currently displayed definition. |
-| Sense list | Shows alternative eligible senses only. The sense already displayed in the title is excluded to avoid duplication. |
-| Action row | Horizontal **Know/Show**, **Dictionary**, and **Cancel** buttons. |
-
-A sense row displays the CEFR level, parenthesized part of speech, and gloss. The current KOReader Button widget supports one face and one bold state per button. Therefore, the implementation keeps the row visually prominent and uses the requested `(noun)` / `(verb)` form; true mixed bold/italic spans require a custom row widget and should be implemented separately if exact typography is required.
-
-Selecting an alternative sense stores its stable `sense_key` by lemma and repaints the page. Pressing **Know** stores the lemma as known and hides every sense and inflected occurrence of that lemma. Pressing **Show** removes the lemma from the known-word set. **Dictionary** calls KOReader's standard dictionary lookup for the underlying surface word rather than introducing a second dictionary UI.
+`onHintTap()` handles underlined-word taps, taps inside the bubble and
+outside dismissal. Nonmatching taps must return false for KOReader.
+The modal `wordwise_hint_dialog.lua` retains its full definition,
+other senses, Know/Show, Dictionary and Cancel controls. Sense selections
+persist in `state.lua`; known lemmas persist in `known_words.lua`.
+These two files are stored under KOReader's data directory, not the plugin.
 
 ## 9. Persistent user state
 
