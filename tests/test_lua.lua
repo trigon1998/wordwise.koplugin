@@ -4,7 +4,7 @@ for _, name in ipairs({
     "_meta.lua", "main.lua", "wordwise_db.lua", "wordwise_hint_dialog.lua",
     "wordwise_l10n.lua", "wordwise_ota.lua", "wordwise_sha256.lua",
     "wordwise_reading_level.lua", "wordwise_bubble.lua",
-    "wordwise_inline.lua", "wordwise_microgloss.lua", "wordwise_language.lua",
+    "wordwise_inline.lua", "wordwise_microgloss.lua", "wordwise_sense_labels.lua", "wordwise_language.lua",
 }) do
     local chunk, err = loadfile(root .. "/" .. name)
     assert(chunk, name .. ": " .. tostring(err))
