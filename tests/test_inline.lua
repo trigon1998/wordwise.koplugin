@@ -16,7 +16,7 @@ package.preload["ui/font"] = function()
 end
 package.preload["ui/rendertext"] = function()
     return {
-        sizeUtf8Text = function(_, _, _, text)
+        sizeUtf8Text = function(_, _, _, _, text)
             return { x = #text * 5, y_top = 9, y_bottom = 3 }
         end,
         truncateTextByWidth = function(_, text, _, width)
