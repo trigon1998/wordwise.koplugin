@@ -2,5 +2,5 @@ local _ = require("gettext")
 return {
     version = "0.2.13",
     fullname = _("Word Wise"),
-    description = _([[Shows short CEFR-tagged definitions above difficult words as an Android-focused per-page overlay. Multiple senses can be selected by tapping a hint; the action dialog can mark a sense known or open KOReader's dictionary. Ships with open-data dictionary sources and supports a user database override.]]),
+    description = _([[Underlines difficult words in Android KOReader with offline WordNet definitions. Tap an underlined word for a short meaning; tap the bubble for other senses, Know/Show or Dictionary. Supports Basic, Intermediate and Advanced CEFR-backed reading modes and user database overrides.]]),
 }
