@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/**
+      - fix/**
   pull_request:
 
 jobs:
@@ -18,6 +19,8 @@ jobs:
         run: lua5.3 tests/test_lua.lua .
       - name: Check definition bubble geometry and cleanup
         run: lua5.3 tests/test_bubble.lua .
+      - name: Check English-only language guard and Vietnamese pages
+        run: lua5.3 tests/test_language.lua .
       - name: Check inline microgloss placement and geometry
         run: lua5.3 tests/test_inline.lua .
       - name: Check offline dictionary and KOReader UI invariants

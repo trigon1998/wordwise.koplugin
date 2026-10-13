@@ -4,7 +4,7 @@ for _, name in ipairs({
     "_meta.lua", "main.lua", "wordwise_db.lua", "wordwise_hint_dialog.lua",
     "wordwise_l10n.lua", "wordwise_ota.lua", "wordwise_sha256.lua",
     "wordwise_reading_level.lua", "wordwise_bubble.lua",
-    "wordwise_inline.lua", "wordwise_microgloss.lua",
+    "wordwise_inline.lua", "wordwise_microgloss.lua", "wordwise_language.lua",
 }) do
     local chunk, err = loadfile(root .. "/" .. name)
     assert(chunk, name .. ": " .. tostring(err))
@@ -13,7 +13,7 @@ end
 package.path = root .. "/?.lua;" .. package.path
 local Microgloss = require("wordwise_microgloss")
 assert(Microgloss.format("confused or bewildered", "micro") == "confused or bewildered")
-assert(Microgloss.format("an unexpectedly long and confusing statement", "micro") == "an unexpectedly long…")
+assert(Microgloss.format("an unexpectedly long and confusing statement", "micro") == "unexpectedly long and confusing…")
 assert(#Microgloss.lengths() == 2)
 local ReadingLevel = require("wordwise_reading_level")
 assert(#ReadingLevel.levels == 3)

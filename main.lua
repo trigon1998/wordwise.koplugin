@@ -34,6 +34,7 @@ local ReadingLevel = require("wordwise_reading_level")
 local WordWiseBubble = require("wordwise_bubble")
 local WordWiseInline = require("wordwise_inline")
 local WordWiseMicrogloss = require("wordwise_microgloss")
+local WordWiseLanguage = require("wordwise_language")
 local WordWiseL10N = require("wordwise_l10n")
 local WordWiseOTA = require("wordwise_ota")
 
@@ -144,7 +145,7 @@ end
 -- apostrophes and hyphens are deliberately rejected: concatenating fragments
 -- made contractions look like unrelated words (we'll -> well, he'll -> hell).
 local function lookupKey(text)
-    if type(text) ~= "string" then return nil end
+    if not WordWiseLanguage.isAsciiWord(text) then return nil end
     local key = text:match("^%s*[^%a]*([%a]+)[^%a]*%s*$")
     if key and #key >= 3 then return key end
 end
@@ -551,6 +552,10 @@ function WordWise:computePageHints()
     if self.bubble then self.bubble:close() end
     self.hints = {}
     if not (self:isEnabled() and self:isSupportedDocument()) then return end
+    local book_lang = self.ui.doc_props and self.ui.doc_props.language
+    -- KOReader readerui.lua normalizes this from the document metadata.
+    -- Never feed a known non-English book to the English WordNet overlay.
+    if WordWiseLanguage.isEnglishBook(book_lang) == false then return end
     local db = self:getDB()
     if not db then return end
     local doc = self.ui.document
@@ -561,6 +566,7 @@ function WordWise:computePageHints()
 
     local xp = doc:getNextVisibleWordStart(start_xp)
     local guard = 0
+    local accented_tokens = 0
     while xp and guard < WORD_WALK_GUARD do
         guard = guard + 1
         if not doc:isXPointerInCurrentPage(xp) then break end
@@ -568,6 +574,9 @@ function WordWise:computePageHints()
         if not end_xp then break end
         local word = doc:getTextFromXPointers(xp, end_xp)
         if word then
+            if not WordWiseLanguage.isAsciiWord(word) then
+                accented_tokens = accented_tokens + 1
+            end
             local key = lookupKey(word)
             if key then
                 local entries = db:lookupAll(key)
@@ -592,8 +601,13 @@ function WordWise:computePageHints()
         if not nxt or nxt == xp then break end
         xp = nxt
     end
-
-
+    -- Fallback when EPUB metadata omits the language. This rejects Vietnamese
+    -- pages containing stray English homographs without scanning outside the
+    -- already-enumerated visible words.
+    if WordWiseLanguage.isEnglishBook(book_lang) == nil
+            and WordWiseLanguage.pageIsNonEnglish(guard, accented_tokens) then
+        self.hints = {}
+    end
 end
 
 -- Hit-test only rendered hints. A miss deliberately returns false so KOReader's
@@ -630,8 +644,8 @@ function WordWise:onHintTap(ges)
 
     if self:getDisplayMode() == "inline" then
         for _, hint in ipairs(self.hints or {}) do
-            if hint.inline_visible and (
-                    pointInBox(pos, hint.box) or pointInBox(pos, hint.hit_box)) then
+            if pointInBox(pos, hint.box)
+                    or (hint.inline_visible and pointInBox(pos, hint.hit_box)) then
                 return self:showHintActions(hint)
             end
         end
@@ -687,8 +701,9 @@ end
 function WordWise:paintHints(bb, x, y)
     if not self:isEnabled() then return end
     x, y = x or 0, y or 0
-    if self:getDisplayMode() == "inline" then
-        return WordWiseInline.paint(bb, x, y, self.hints, {
+    local inline = self:getDisplayMode() == "inline"
+    if inline then
+        WordWiseInline.paint(bb, x, y, self.hints, {
             face = self.gloss_face,
             line_spacing = self.ui.font and self.ui.font.configurable
                 and self.ui.font.configurable.line_spacing or 100,
@@ -701,7 +716,10 @@ function WordWise:paintHints(bb, x, y)
     local width, height = Screen:getWidth(), Screen:getHeight()
     for _, hint in ipairs(self.hints or {}) do
         local box = hint.box
-        if box and box.w > 0 and box.h >= thickness + 3 then
+        -- Inline labels can collide on a dense page. Leave a visible underline
+        -- and tap target for every word whose above-line label couldn't fit.
+        if (not inline or not hint.inline_visible)
+                and box and box.w > 0 and box.h >= thickness + 3 then
             local left = math.max(0, math.floor(box.x))
             local right = math.min(width, math.ceil(box.x + box.w))
             local baseline = math.floor(box.y + box.h - thickness - 3)
@@ -716,7 +734,7 @@ function WordWise:paintHints(bb, x, y)
             end
         end
     end
-    if self.bubble then self.bubble:paint(bb, x, y) end
+    if self.bubble and not inline then self.bubble:paint(bb, x, y) end
 end
 
 -- Recompute + repaint for settings that do not relayout the document.

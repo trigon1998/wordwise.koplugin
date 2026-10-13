@@ -30,15 +30,19 @@ end
 
 local Microgloss = require("wordwise_microgloss")
 assert(Microgloss.format("an extended explanation with unnecessary extra detail", "micro")
-    == "an extended explanation…")
+    == "extended explanation…")
 assert(Microgloss.format("very confused", "micro") == "very confused")
 assert(Microgloss.format("confused and unable to make sense of a thing", "short")
     == "confused and unable to make sense…")
 assert(Microgloss.format("a person who plays an instrument", "micro")
-    == "a person who plays…")
+    == "person who plays…")
 assert(Microgloss.format(nil, "micro") == "")
 assert(Microgloss.isValidLength("micro"))
 assert(not Microgloss.isValidLength("missing"))
+assert(Microgloss.format("a dishonest or fraudulent person with bad intentions", "micro")
+    == "dishonest or fraudulent person…")
+assert(Microgloss.format("a dishonest or fraudulent person with bad intentions", "short")
+    == "dishonest or fraudulent person with bad…")
 
 local Inline = require("wordwise_inline")
 local bb = {
@@ -76,4 +80,20 @@ Inline.paint(bb, 0, 0, hints,
     { face = font, length = "short", line_spacing = 170 })
 assert(#text_painted == 6)
 assert(text_painted[5] ~= text_painted[3])
+-- An overcrowded row must safely drop overlapping labels, never draw one
+-- on top of another. The caller then underlines their source words.
+local crowded = {}
+for i = 1, 5 do
+    crowded[#crowded + 1] = {
+        box = { x = 30 + (i - 1) * 20, y = 340, w = 35, h = 32 },
+        entry = { gloss = "a dishonest or fraudulent person", cefr_rank = 5 },
+        cefr_rank = 5,
+    }
+end
+local candidates, shown = Inline.paint(bb, 0, 0, crowded,
+    { face = font, length = "short", line_spacing = 170 })
+assert(candidates == 5 and shown < candidates, "expected collision fallback")
+for _, hint in ipairs(crowded) do
+    assert(hint.inline_visible or hint.hit_box == nil)
+end
 print("microgloss_inline_paint_tap_targets_and_cache_ok")

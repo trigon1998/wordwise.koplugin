@@ -67,6 +67,16 @@ assert 'WordWiseMicrogloss.lengths()' in main
 assert 'applied ~= nil and applied ~= before' in main
 assert 'wordwise_inline.lua' in (ROOT / 'wordwise_ota.lua').read_text()
 assert 'wordwise_microgloss.lua' in (ROOT / 'wordwise_ota.lua').read_text()
+assert 'wordwise_language.lua' in (ROOT / 'wordwise_ota.lua').read_text()
+assert 'WordWiseLanguage.isEnglishBook(book_lang) == false' in main
+assert 'WordWiseLanguage.pageIsNonEnglish(guard, accented_tokens)' in main
+assert 'if not WordWiseLanguage.isAsciiWord(text) then return nil end' in main
+assert '(not inline or not hint.inline_visible)' in main
+assert 'pointInBox(pos, hint.box)' in main
+inline_source = (ROOT / 'wordwise_inline.lua').read_text()
+assert 'mode == "short" and 0.46 or 0.29' in inline_source
+assert 'MAX_HINT_WIDTH = 138' not in inline_source
+print('v0216_language_detection_proportional_width_and_fallback_guards_ok')
 print('dual_display_and_microgloss_ota_guards_ok')
 assert 'self:setLineSpacing(on)' not in main
 assert 'HINT_INTERLINE_MIN' not in main
@@ -126,8 +136,8 @@ assert 'checksum_url' in ota and 'SHA256.digest_file' in ota
 assert 'MAX_EXTRACTED_SIZE' in ota and 'MAX_ARCHIVE_ENTRIES' in ota
 assert 'wordwise_hint_dialog.lua' in ota and 'wordwise_l10n.lua' in ota
 assert 'archive version does not match release tag' in ota
-assert 'current_version = "0.2.15"' in ota
-assert 'version = "0.2.15"' in meta
+assert 'current_version = "0.2.16"' in ota
+assert 'version = "0.2.16"' in meta
 assert 'known_words.lua' in (ROOT / 'DEVELOPMENT.md').read_text()
 print('ota_contract_guards_ok')
 db_lua = (ROOT / 'wordwise_db.lua').read_text()

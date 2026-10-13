@@ -9,7 +9,9 @@ local Microgloss = require("wordwise_microgloss")
 local Inline = {}
 local CARET_DEPTH = 5
 local GLOSS_HGAP = 7
-local MAX_HINT_WIDTH = 138
+-- A hard 138px limit made Micro and Short look identical on Android:
+-- both were clipped to roughly the first two words even on a wide screen.
+-- Set proportional widths independently while leaving room for other hints.
 
 local function metrics(face)
     local ok, height, asc = pcall(function()
@@ -68,9 +70,13 @@ function Inline.paint(bb, x, y, hints, options)
     local ascent, descent = metrics(face)
     local width, height = bb:getWidth(), bb:getHeight()
     local left, right = 4, width - 4
-    local max_width = math.min(MAX_HINT_WIDTH, math.floor((right - left) * .37))
     local spacing = math.max(100, tonumber(options.line_spacing) or 100)
-    local mode = options.length or "micro"
+    local mode = options.length == "short" and "short" or "micro"
+    -- Micro (4 words) gets up to 29% of the screen; Short (6 words) gets
+    -- up to 46%. Wider hints may collide, but Word Wise underlines all
+    -- rejected labels so the corresponding words are still discoverable.
+    local max_width = math.max(60, math.floor((right - left)
+        * (mode == "short" and 0.46 or 0.29)))
     local items = {}
 
     for _, hint in ipairs(hints) do

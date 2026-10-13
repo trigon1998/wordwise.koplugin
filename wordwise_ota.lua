@@ -16,7 +16,7 @@ local OTA = {
     owner = "trigon1998",
     repo = "wordwise.koplugin",
     asset_name = "wordwise.koplugin.zip",
-    current_version = "0.2.15",
+    current_version = "0.2.16",
 }
 OTA.checksum_name = OTA.asset_name .. ".sha256"
 OTA.api_url = "https://api.github.com/repos/" .. OTA.owner .. "/" .. OTA.repo .. "/releases/latest"
@@ -41,6 +41,7 @@ local REQUIRED_FILES = {
     ["wordwise_bubble.lua"] = true,
     ["wordwise_inline.lua"] = true,
     ["wordwise_microgloss.lua"] = true,
+    ["wordwise_language.lua"] = true,
     ["wordwise_reading_level.lua"] = true,
     ["wordwise_l10n.lua"] = true,
     ["wordwise_ota.lua"] = true,

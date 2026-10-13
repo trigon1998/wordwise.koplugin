@@ -1,6 +1,6 @@
 local _ = require("gettext")
 return {
-    version = "0.2.15",
+    version = "0.2.16",
     fullname = _("Word Wise"),
-    description = _([[Choose between Inline microglosses above difficult words and Tap-to-define underlines. All meanings come from offline WordNet, with a multi-sense picker, Know/Show, and Basic/Intermediate/Advanced CEFR filters.]]),
+    description = _([[English WordNet hints for KOReader: switch between compact Inline definitions and Tap-to-define underlines. Micro/Short labels use screen-aware widths; crowded Inline hints fall back to tappable underlines. Non-English books are ignored to prevent incorrect definitions.]]),
 }
