@@ -59,9 +59,9 @@ local hints = {
         cefr_rank = 3,
     },
 }
-Inline.paint(bb, 0, 0, hints,
+local candidates, rendered = Inline.paint(bb, 0, 0, hints,
     { face = font, length = "micro", line_spacing = 170 })
-assert(#text_painted == 2, "painted=" .. tostring(#text_painted) .. " first=" .. tostring(hints[1].inline_visible) .. " second=" .. tostring(hints[2].inline_visible))
+assert(#text_painted == 2, "painted=" .. tostring(#text_painted) .. " candidates=" .. tostring(candidates) .. " rendered=" .. tostring(rendered) .. " first=" .. tostring(hints[1].inline_visible) .. " second=" .. tostring(hints[2].inline_visible))
 assert(hints[1].inline_visible == true and hints[1].hit_box)
 assert(hints[2].inline_visible == true and hints[2].hit_box)
 assert(pixels > 0)
