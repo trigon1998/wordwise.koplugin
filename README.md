@@ -4,7 +4,7 @@
 
 Word Wise is an offline vocabulary companion for **KOReader on Android**. It provides **two display modes**: **Inline hints** show tiny WordNet definition excerpts above difficult words, while **Tap to define** underlines them and shows a nearby bubble when tapped. Both modes use the same offline dictionary, selected senses, CEFR filters and known-word list.
 
-**Latest:** [v0.2.15 — Dual Display](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.15) · **English definitions** · **No AI or API key** · **Offline reading**
+**Latest:** [v0.2.16 — Inline Readability Fix](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.16) · **English definitions** · **No AI or API key** · **Offline reading**
 
 ![Word Wise reading preview showing wavy underlines and a nearby definition bubble](docs/images/wordwise-reader-preview.svg)
 
@@ -27,6 +27,10 @@ Your choice is **saved per book**. The chosen CEFR level, WordNet dictionary and
 - **Short**: up to **6 words / 50 characters**.
 
 Rather than guessing a synonym, these microglosses are **extractive snippets of the existing selected WordNet sense**. A trailing ellipsis tells you that the full definition contains more information. Tap the hint whenever you need the complete meaning. This keeps the plugin offline, fast and transparent about ambiguity.
+
+**v0.2.16 readability fixes:** Micro and Short now use different *screen-relative* width budgets, so Short can actually display more words instead of both modes being clipped to the old 138-pixel limit. The formatter also drops uninformative leading English articles (for example, "a dishonest or fraudulent person" becomes "dishonest or fraudulent person").
+
+When words appear too close together for above-word definitions to fit without overlapping, the plugin now gives those words a **subtle underline as a fallback**. Tapping such a word still opens the full WordNet senses. It is intentionally not possible to display every inline label without covering nearby text, particularly at high vocabulary densities.
 
 ## Features
 
@@ -101,6 +105,18 @@ Use **Word Wise → Known words file** to find the data directory. Optionally ov
 
 **Line spacing:** Tap mode retains the book's original spacing. Inline mode temporarily raises it to accommodate hints; returning to Tap mode or disabling Word Wise restores the saved value unless the reader deliberately changed it.
 
+## English-only dictionary
+
+Word Wise currently explains **English vocabulary**, not Vietnamese words. It
+checks the KOReader book-language metadata and skips books marked as Vietnamese
+(or any other non-English language). For books without a language tag, it uses
+the proportion of words containing accented characters on the current page
+as a conservative fallback. This prevents words such as Vietnamese *con* from
+being confused with English *con* ("a dishonest person").
+
+If an English ebook has missing or incorrect language metadata, correcting
+the book language in Calibre / KOReader metadata is recommended.
+
 ## Compatibility and limitations
 
 - Works with **reflowable/crengine** formats, such as EPUB, on compatible KOReader builds.
@@ -152,4 +168,4 @@ The upstream project has no clearly recognized GitHub license. Before redistribu
 
 ---
 
-[**Latest release**](https://github.com/trigon1998/wordwise.koplugin/releases/latest) · [**v0.2.15 release notes**](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.15) · [**Development guide**](DEVELOPMENT.md)
+[**Latest release**](https://github.com/trigon1998/wordwise.koplugin/releases/latest) · [**v0.2.16 release notes**](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.16) · [**Development guide**](DEVELOPMENT.md)
