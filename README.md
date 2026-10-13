@@ -1,65 +1,99 @@
-# Word Wise for KOReader — Android CEFR fork
+# Word Wise for KOReader
 
-This fork is based on [asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin) and is optimized for **KOReader on Android**. It underlines difficult words and shows short offline definitions when you tap them. It never rewrites the book file.
+**Read more. Look up less. Understand more.**
 
-The fork removes Kindle/Amazon corpus detection and conversion. Its bundled data is built from the open CEFR-J and Octanove vocabulary profiles plus Open English WordNet definitions. The project keeps upstream attribution and records the data sources used by the build tools.
+Word Wise is an offline vocabulary companion for **KOReader on Android**. It gently underlines difficult words inside your book. Tap an underlined word for a short **WordNet definition** in a nearby bubble. Tap again to browse other meanings, choose the one you prefer, or mark a word as known. Your original book and line spacing stay intact.
 
-![Word Wise showing glosses above difficult words](screenshot.png)
+**Latest:** [v0.2.14 — Offline Word Sense](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.14) · **English definitions** · **No AI or API key** · **Offline reading**
 
-## Install on Android
+![Word Wise reading preview showing wavy underlines and a nearby definition bubble](docs/images/wordwise-reader-preview.svg)
 
-1. Download the release ZIP and unzip it as `wordwise.koplugin`.
-2. Copy the folder to the KOReader plugins directory, normally `koreader/plugins/`.
-3. Restart KOReader.
-4. Open a reflowable book and select **☰ → More tools → Word Wise → Underline difficult words**.
+*Illustrative concept of the v0.2.14 reading experience — not a screenshot captured on a real KOReader device.*
 
-Word Wise can update itself from signed-off GitHub release assets via **Word
-Wise → Updates**. It shows the release notes before installation, verifies the
-ZIP against its published SHA-256 checksum, and offers to restart KOReader when
-the atomic installation succeeds. The optional wake-time notification only
-checks release metadata; it never installs an update automatically.
+## Features
 
-The plugin targets reflowable/crengine documents. Paging/fixed-layout documents are not currently supported because the overlay needs KOReader’s visible-word and screen-box APIs.
+| Feature | Description |
+| --- | --- |
+| **Discreet underlines** | Difficult words get subtle wavy underlines instead of definitions above the text. |
+| **Tap to define** | See a short English explanation directly beside the word. |
+| **Multiple meanings** | Choose among locally stored WordNet senses and remember your preference. |
+| **Reading levels** | Basic, Intermediate and Advanced determine how many words are marked. |
+| **Know / Show** | Hide words you know; restore them whenever you need. |
+| **Offline-first** | Word lookup requires no internet connection, AI model, or API key. |
+| **OTA updates** | Check GitHub releases from KOReader and verify release ZIP files using SHA-256. |
 
-## Offline Word Sense: reading levels
+The local SQLite dictionary combines **CEFR-J** and **Octanove** word-level profiles with **Open English WordNet** explanations. Word Wise does not automatically translate words or infer the correct meaning from a sentence.
 
-The plugin uses its existing local CEFR + WordNet SQLite database only:
-**no AI, network connection, API key or contextual inference**.
+## How it works
 
-Choose **Reading level** in the Word Wise menu:
+![Tap underlined word for a definition, then tap bubble to open sense selection and Know or Dictionary actions](docs/images/wordwise-sense-picker.svg)
 
-| Reader proficiency | Words marked (CEFR) | Behavior |
+*UI illustration. Real fonts, layout, available senses, and button sizes depend on your KOReader build and dictionary.*
+
+1. **Read:** Difficult words matching your chosen reading level are underlined.
+2. **Tap a word:** A small bubble shows a concise offline definition.
+3. **Tap the bubble:** Open the existing Word Wise dialog to browse other meanings, save a preferred sense, select **Know/Show**, or launch the native **Dictionary**.
+
+Normal taps on unmarked text still go to KOReader's reading controls. A tap outside an open bubble dismisses it without simultaneously turning the page.
+
+## Choose your reading level
+
+![Basic Intermediate Advanced Word Wise levels mapped to six CEFR bands](docs/images/wordwise-reading-levels.svg)
+
+| Mode | CEFR bands eligible for underlining | Recommended for |
 | --- | --- | --- |
-| Basic | A2–C2 | Most vocabulary help |
-| Intermediate | B1–C2 | Balanced; default for new users |
-| Advanced | C1–C2 | Only higher-level words |
+| **Basic** | A2, B1, B2, C1, C2 | More vocabulary guidance |
+| **Intermediate** | B1, B2, C1, C2 | Balanced help (**default for new users**) |
+| **Advanced** | C1, C2 | Only higher-level vocabulary |
 
-The original six CEFR labels remain in the database and sense picker. Old
-`wordwise_cefr_level` settings are mapped non-destructively: A1/A2 → Basic,
-B1/B2 → Intermediate, and C1/C2 → Advanced. A user-chosen Reading level
-takes precedence.
+These are **reader proficiency modes**, not three exclusive sets of words. The original six CEFR values remain in the database and dictionary popup. Previous A1/A2 settings map to Basic, B1/B2 to Intermediate, and C1/C2 to Advanced; existing preferences are not deleted.
 
-## Underline and tap to define
+## Install / update on Android
 
-Words meeting the proficiency threshold get a subtle wavy underline.
-**Tap an underlined word** to see its short WordNet meaning in a nearby
-bubble, without changing the book's line spacing. **Tap the bubble** to
-open the existing action dialog, which lists alternative senses and offers
-**Know/Show**, **Dictionary** and **Cancel**.
+### Updating an existing installation
 
-As before, a selected sense is remembered for the lemma. Marking a word
-as known hides its underlines; selected meanings and known words are stored
-outside the plugin directory and survive updates. A tap on unmarked text
-passes through to normal KOReader controls. Tapping away while a bubble is
-open dismisses it without also turning the page.
+1. Open a reflowable book in KOReader and select **More tools → Word Wise → Updates → Check for updates**.
+2. Choose [**v0.2.14**](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.14), review the notes, and confirm the update and restart.
+3. Turn on **Word Wise → Underline difficult words**, then set your **Reading level**.
 
-When upgrading from older inline-gloss releases, the plugin restores the
-original per-book line spacing if it had been increased by Word Wise
-and the reader has not manually changed that setting.
+The updater verifies the release ZIP against its published SHA-256 checksum before installation. The network is needed for **checking and downloading updates only** — word lookups stay offline.
 
-## Database schema
+### Fresh installation
 
-The fork reads this schema:
+1. Download [**wordwise.koplugin.zip**](https://github.com/trigon1998/wordwise.koplugin/releases/latest).
+2. Extract the ZIP; the folder must be named exactly `wordwise.koplugin`.
+3. Copy the directory into the KOReader plugins folder, usually `koreader/plugins/`.
+4. Restart KOReader, open a reflowable book, and enable **More tools → Word Wise → Underline difficult words**.
+
+> **Important:** This is a KOReader plugin, not an Android APK. `main.lua` and `wordwise.db` should sit directly inside `wordwise.koplugin/`.
+
+## Multiple meanings and saved words
+
+Every dictionary entry stores a concise bubble definition (`short_def`), full meaning (`full_def`), part of speech, CEFR label, and a stable `sense_key`. You can select an alternative meaning without AI or contextual inference.
+
+Marking **Know** removes underlines for that lemma, including other occurrences or inflected forms where its dictionary lookup resolves to that lemma. Your word list and preferred senses are separate from the plugin and persist across OTA updates:
+
+| KOReader data file | Saved information |
+| --- | --- |
+| `wordwise/known_words.lua` | Known words |
+| `wordwise/state.lua` | Manually selected meanings |
+| Book-specific settings | Whether Word Wise is enabled in the current book |
+
+Use **Word Wise → Known words file** to find the data directory. Optionally override the bundled dictionary with a compatible `wordwise.db` in that data folder.
+
+**Line spacing:** v0.2.14 does not reserve extra space for definitions. For previous versions that raised the line spacing, Word Wise restores the saved per-book value on upgrade if you have not manually changed it.
+
+## Compatibility and limitations
+
+- Works with **reflowable/crengine** formats, such as EPUB, on compatible KOReader builds.
+- **Fixed-layout PDF and DjVu** books are not currently supported by the underline overlay.
+- Word lookup is **offline**. Release checks and OTA downloads require internet.
+- Does **not** provide AI-assisted context selection, phrase/idiom inference, or automatic translation to Vietnamese.
+- Touch-zone customizations and other overlay plugins may need a compatibility check on the physical device.
+
+## Database and development
+
+The canonical local dictionary uses the following SQLite schema:
 
 ```sql
 CREATE TABLE entries (
@@ -77,11 +111,7 @@ CREATE INDEX entries_word_idx ON entries(word COLLATE NOCASE);
 CREATE INDEX entries_cefr_idx ON entries(cefr_level);
 ```
 
-A user database placed at `<koreader data dir>/wordwise/wordwise.db` overrides the bundled database. User choices are stored separately in `<koreader data dir>/wordwise/known_words.lua` and `<koreader data dir>/wordwise/state.lua`, outside the plugin folder. Updating or replacing `wordwise.koplugin` therefore does not remove the known-word list. The Word Wise menu includes **Known words file** to show the exact path. The runtime also accepts the upstream `difficulty` schema as a temporary compatibility path and maps its five bands approximately to CEFR.
-
-## Building the dictionary
-
-The preferred build uses the open CEFR-J and Octanove profiles together with Open English WordNet:
+Build the dictionary with the provided CEFR-J, Octanove, curated glossary and WordNet source files:
 
 ```sh
 cd tools
@@ -92,29 +122,16 @@ python3 build_cefr_wordnet_dict.py \
   --out ../wordwise.db
 ```
 
-The builder preserves curated rows from `open_glosses.tsv`, adds multiple WordNet senses for CEFR-mapped lemmas, and never invents a CEFR level. It generates the compact `short_def` while retaining the original source definition in `full_def`. Gloss rows without an audited CEFR mapping are reported and skipped.
+The builder keeps existing curated definitions, adds WordNet senses for mapped lemmas, and skips words without an audited CEFR level. See the [developer guide](DEVELOPMENT.md) for implementation, tests and OTA internals.
 
-To build only from curated glosses, use `build_cefr_dict.py`. The removed upstream Zipf difficulty pipeline is intentionally not part of this fork’s release build.
+## Data, attribution and licensing
 
-## Data and attribution
+This project is based on [asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin) and is optimized for KOReader on Android. The fork removes Kindle/Amazon corpus detection and conversion.
 
-The bundled dictionary uses:
+The dictionary includes **CEFR-J Vocabulary Profile 1.5** (CEFR-J project and Tono Laboratory, Tokyo University of Foreign Studies), **Octanove Vocabulary Profile C1/C2 1.0** (CC BY-SA 4.0), **Open English WordNet 2024**, and project-curated entries in [`tools/open_glosses.tsv`](tools/open_glosses.tsv).
 
-- CEFR-J Vocabulary Profile 1.5, provided by the CEFR-J project and Tono Laboratory at Tokyo University of Foreign Studies.
-- Octanove Vocabulary Profile C1/C2 1.0, used under its stated CC BY-SA 4.0 terms.
-- Open English WordNet 2024 definitions.
-- Project-curated glosses in `tools/open_glosses.tsv`.
+The upstream project has no clearly recognized GitHub license. Before redistributing modified upstream code or assets, confirm the original author's permissions and respect each dictionary source's license.
 
-Review the upstream repository’s licensing status before publishing a redistributed fork. The upstream repository does not expose a recognized GitHub license, so attribution and permission should be clarified with the original author before distributing modified upstream code or assets.
+---
 
-## Compatibility and stability notes
-
-The overlay currently supports reflowable/crengine documents, including
-EPUB where KOReader exposes visible-word and screen-box APIs. Fixed-layout
-PDF/DjVu support is not included in this fork.
-
-Grapheme layout and underlines use KOReader's screen-box coordinates.
-The full-screen priority tap zone handles only matched words or dismissal
-of an already open bubble, so other taps preserve normal page turns.
-Font, margin, and layout changes trigger re-enumeration of the visible
-word positions. The offline database schema and updater are unchanged.
+[**Latest release**](https://github.com/trigon1998/wordwise.koplugin/releases/latest) · [**v0.2.14 release notes**](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.14) · [**Development guide**](DEVELOPMENT.md)
