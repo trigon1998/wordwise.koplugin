@@ -96,7 +96,7 @@ for _, unsafe in ipairs({
 }) do
     assert(not OTA.safe_archive_path(unsafe), unsafe)
 end
-assert(OTA.compare_versions("v0.2.13", "0.2.12") == 1)
+assert(OTA.compare_versions("v0.2.14", "0.2.13") == 1)
 assert(OTA.compare_versions("0.2.12-extra", "0.2.12") == nil)
 
 print("lua_syntax_sha256_and_morphology_ok")
