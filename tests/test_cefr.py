@@ -45,15 +45,23 @@ for path in [ROOT / 'main.lua', ROOT / 'wordwise_db.lua', ROOT / 'README.md']:
 print('no_runtime_kind le_references_ok'.replace(' ', ''))
 
 main = (ROOT / 'main.lua').read_text()
-assert 'truncateTextByWidth' in main
-assert 'below_baseline' in main and 'below_top' in main
-assert 'hit_box' in main
-assert 'screen_h' in main
-print('ui_layout_guards_ok')
+assert 'function WordWise:paintHints(bb, x, y)' in main
+assert 'self.bubble:paint(bb, x, y)' in main
+assert 'Blitbuffer.COLOR_GRAY' in main
+assert 'for offset = 0, right - left - 1, step do' in main
+assert 'function WordWise:onHintTap(ges)' in main
+assert 'self.bubble:show(hint, size, self:tr("tap_for_details"))' in main
+assert 'self.bubble:contains(pos)' in main
+assert 'return false -- Ordinary page taps still pass through to KOReader' not in main
+assert 'self:restoreLegacyLineSpacing()' in main
+assert 'self:setLineSpacing(on)' not in main
+assert 'HINT_INTERLINE_MIN' not in main
+print('underline_bubble_tap_and_no_reflow_guards_ok')
 assert 'KNOWN_WORDS_PATH' in main
 assert 'known_words.lua' in main
 assert 'function WordWise:isWordKnown(entry)' in main
-assert 'iv[2] + GLOSS_HGAP' in main
+assert 'wordwise_reading_level' in main
+assert 'wordwise_bubble' in main
 print('known_storage_and_overlap_guards_ok')
 dialog = (ROOT / 'wordwise_hint_dialog.lua').read_text()
 assert 'ButtonDialog:extend' in dialog
@@ -144,10 +152,22 @@ assert 'function OTA:fetch_latest_cached()' in ota
 assert 'BACKGROUND_CHECK_INTERVAL = 60 * 60' in ota
 assert 'Notify on wake when update available' in (ROOT / 'wordwise_l10n.lua').read_text()
 print('ota_release_notes_wake_notification_and_restart_guards_ok')
-assert 'local width_cache = h._render_cache' in main
-assert 'h._render_cache = width_cache' in main
-assert 'local hit_box = it.h.hit_box or {}' in main
-print('render_allocation_guards_ok')
+bubble = (ROOT / 'wordwise_bubble.lua').read_text()
+levels = (ROOT / 'wordwise_reading_level.lua').read_text()
+assert 'function Bubble:show(hint, font_size, tap_text)' in bubble
+assert 'function Bubble:close()' in bubble
+assert 'function Bubble:contains(pos)' in bubble
+assert 'function Bubble:paint(bb, x, y)' in bubble
+assert 'frame:free()' in bubble
+assert 'Basic = "A2"' in levels
+assert 'Intermediate = "B1"' in levels
+assert 'Advanced = "C1"' in levels
+assert 'wordwise_reading_level' in main
+assert 'wordwise_cefr_level' in main
+assert 'function WordWise:setReadingLevel(level)' in main
+assert 'ReadingLevel.levels' in main
+assert 'wordwise_bubble.lua' in ota and 'wordwise_reading_level.lua' in ota
+print('bubble_reading_level_and_ota_requirements_ok')
 
 assert 'local function lookupKey(text)' in main
 assert 'text:match("^%s*[^%a]*([%a]+)[^%a]*%s*$")' in main
@@ -157,7 +177,8 @@ assert 'table.sort(names)' in main
 assert 'db_fallback' in main
 assert 'wordwise_previous_line_spacing' in main
 assert 'wordwise_applied_line_spacing' in main
-assert 'ds:delSetting(previous_key)' in main
+assert 'ds:delSetting("wordwise_previous_line_spacing")' in main
+assert 'ds:delSetting("wordwise_applied_line_spacing")' in main
 print('normalization_db_fallback_and_spacing_guards_ok')
 
 builder = (ROOT / 'tools' / 'build_cefr_wordnet_dict.py').read_text()
