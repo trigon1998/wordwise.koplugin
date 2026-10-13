@@ -22,7 +22,7 @@ package.preload["ui/rendertext"] = function()
         truncateTextByWidth = function(_, text, _, width)
             return text:sub(1, math.max(1, math.floor(width / 5) - 1)) .. "…"
         end,
-        renderUtf8Text = function(_, _, _, _, text)
+        renderUtf8Text = function(_, _, _, _, _, text)
             text_painted[#text_painted + 1] = text
         end,
     }
@@ -30,7 +30,7 @@ end
 
 local Microgloss = require("wordwise_microgloss")
 assert(Microgloss.format("an extended explanation with unnecessary extra detail", "micro")
-    == "an extended explanation with…")
+    == "an extended explanation…")
 assert(Microgloss.format("very confused", "micro") == "very confused")
 assert(Microgloss.format("confused and unable to make sense of a thing", "short")
     == "confused and unable to make sense…")
