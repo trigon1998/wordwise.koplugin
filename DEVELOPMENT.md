@@ -21,6 +21,13 @@ The checked-in TSV has **no approved entries yet**; don't merge and publish
 a release until the review data has sufficient audited coverage. Loading an
 empty file is intentional and safe.
 
+**Important coverage caveat:** `wordwise.db` prioritizes curated
+`open_glosses.tsv` meanings before WordNet records. Those curated meanings
+may not have an OEWN synset ID in their `source` field. They must fall back
+to the dictionary until separately reviewed/mapped to the exact 2024 synset
+or given an individually approved short paraphrase; never connect them to
+an OEWN synset merely because their headword matches.
+
 ### Building review candidates (offline builder, not an on-device AI feature)
 
 Install `wn` and the *exact* 2024 OEWN dataset, used by the original
