@@ -22,7 +22,7 @@ function Labels.load(path)
             -- WordNet sense and exact source in the match key.
             if status == "approved" and #sense >= 8 and word ~= ""
                     and source:match("^oewn:2024:") and (kind == "synonym" or kind == "paraphrase")
-                    and label ~= "" and #label <= 70 and #label:gsub("[%z\1-\31]", "") == #label
+                    and label ~= "" and #label <= 70 and not label:find("[%c]")
                     and not self.by_sense[sense] then
                 self.by_sense[sense] = {
                     word = word:lower(), pos = pos, source = source,
