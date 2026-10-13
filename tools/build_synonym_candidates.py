@@ -61,7 +61,7 @@ def rank_same_synset(word, part_of_speech, target_level, lemma_list, levels):
     return [candidate[-1] for candidate in ranked]
 
 
-def rows_for_review(db_path, lexicon, levels, limit=None):
+def rows_for_review(db_path, levels, limit=None):
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     query = ("SELECT word, pos, cefr_level, sense_key, source, full_def "
@@ -82,11 +82,15 @@ def rows_for_review(db_path, lexicon, levels, limit=None):
                     synset = wn.synset(synset_id, lexicon="oewn:2024")
                     synset_cache[synset_id] = (
                         [w.lemma() for w in synset.words()], synset.pos)
-                except (KeyError, ValueError, wn.Error):
-                    synset_cache[synset_id] = ([], None)
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Cannot resolve {synset_id} in oewn:2024; "
+                        "check the exact WordNet edition before approving labels"
+                    ) from exc
             lemma_list, synset_pos = synset_cache[synset_id]
             expected = POS.get(row["pos"])
-            if expected and synset_pos and expected != synset_pos:
+            if (expected and synset_pos and expected != synset_pos
+                    and not (expected == "a" and synset_pos == "s")):
                 continue
             alternatives = rank_same_synset(
                 row["word"], row["pos"] or "", row["cefr_level"],
@@ -129,7 +133,7 @@ def main():
         writer = csv.DictWriter(fh, fieldnames)
         writer.writeheader()
         writer.writerows(rows_for_review(
-            args.db, wn.Wordnet("oewn:2024"), levels, args.limit or None
+            args.db, levels, args.limit or None
         ))
 
 
