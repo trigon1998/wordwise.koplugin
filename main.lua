@@ -34,6 +34,7 @@ local ReadingLevel = require("wordwise_reading_level")
 local WordWiseBubble = require("wordwise_bubble")
 local WordWiseInline = require("wordwise_inline")
 local WordWiseMicrogloss = require("wordwise_microgloss")
+local WordWiseSenseLabels = require("wordwise_sense_labels")
 local WordWiseLanguage = require("wordwise_language")
 local WordWiseL10N = require("wordwise_l10n")
 local WordWiseOTA = require("wordwise_ota")
@@ -93,6 +94,19 @@ end
 function WordWise:setInlineHintLength(length)
     if not WordWiseMicrogloss.isValidLength(length) then return end
     G_reader_settings:saveSetting("wordwise_inline_hint_length", length)
+    self:refresh()
+end
+
+-- Meaning source and displayed length are independent options.
+-- No reviewed sense label means a strict fallback to the WordNet definition.
+function WordWise:getInlineMeaningSource()
+    local source = G_reader_settings:readSetting("wordwise_inline_meaning_source")
+    return source == "simplified" and "simplified" or "dictionary"
+end
+
+function WordWise:setInlineMeaningSource(source)
+    if source ~= "simplified" and source ~= "dictionary" then return end
+    G_reader_settings:saveSetting("wordwise_inline_meaning_source", source)
     self:refresh()
 end
 
@@ -304,6 +318,7 @@ function WordWise:init()
     self.ui.menu:registerToMainMenu(self)
     -- infofont is NotoSans (proportional), suitable for compact glosses.
     self.bubble = WordWiseBubble.new()
+    self.reviewed_labels = WordWiseSenseLabels.load(PLUGIN_ROOT .. "wordwise_sense_labels.tsv")
     self.gloss_face = Font:getFace("infofont", 11)
     self.hints = {}
     self:getState()
@@ -708,6 +723,8 @@ function WordWise:paintHints(bb, x, y)
             line_spacing = self.ui.font and self.ui.font.configurable
                 and self.ui.font.configurable.line_spacing or 100,
             length = self:getInlineHintLength(),
+            meaning_source = self:getInlineMeaningSource(),
+            reviewed_labels = self.reviewed_labels,
         })
     end
     local step = math.max(1, math.floor(Screen:scaleBySize(2)))
@@ -943,6 +960,32 @@ function WordWise:getSubMenu()
                         checked_func = function() return self:getDisplayMode() == "inline" end,
                         radio = true,
                         callback = function() self:setDisplayMode("inline") end,
+                    },
+                }
+            end,
+        },
+        {
+            text_func = function()
+                return self:tr("inline_meaning", self:getInlineMeaningSource() == "dictionary"
+                    and self:tr("meaning_dictionary") or self:tr("meaning_simplified"))
+            end,
+            enabled_func = function()
+                return self:isSupportedDocument() and self:hasDB()
+                    and self:getDisplayMode() == "inline"
+            end,
+            sub_item_table_func = function()
+                return {
+                    {
+                        text = self:tr("meaning_dictionary"),
+                        checked_func = function() return self:getInlineMeaningSource() == "dictionary" end,
+                        radio = true,
+                        callback = function() self:setInlineMeaningSource("dictionary") end,
+                    },
+                    {
+                        text = self:tr("meaning_simplified"),
+                        checked_func = function() return self:getInlineMeaningSource() == "simplified" end,
+                        radio = true,
+                        callback = function() self:setInlineMeaningSource("simplified") end,
                     },
                 }
             end,
