@@ -1,0 +1,5 @@
+# Reviewed simplified labels for a specific WordNet 2024 synset/sense.
+# Format (tabs): sense_key  word  pos  source  kind  label  status
+# Only rows with status=approved and an exact sense_key+word+pos+source match
+# are loaded. Generated candidates must not be placed here before review.
+# There are intentionally no unreviewed or speculative labels.
