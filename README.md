@@ -1,6 +1,6 @@
 # Word Wise for KOReader — Android CEFR fork
 
-This fork is based on [asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin) and is optimized for **KOReader on Android**. It shows short definitions above difficult words as a per-page overlay without rewriting the book file.
+This fork is based on [asxelot/wordwise.koplugin](https://github.com/asxelot/wordwise.koplugin) and is optimized for **KOReader on Android**. It underlines difficult words and shows short offline definitions when you tap them. It never rewrites the book file.
 
 The fork removes Kindle/Amazon corpus detection and conversion. Its bundled data is built from the open CEFR-J and Octanove vocabulary profiles plus Open English WordNet definitions. The project keeps upstream attribution and records the data sources used by the build tools.
 
@@ -11,7 +11,7 @@ The fork removes Kindle/Amazon corpus detection and conversion. Its bundled data
 1. Download the release ZIP and unzip it as `wordwise.koplugin`.
 2. Copy the folder to the KOReader plugins directory, normally `koreader/plugins/`.
 3. Restart KOReader.
-4. Open a reflowable book and select **☰ → More tools → Word Wise → Show inline hints**.
+4. Open a reflowable book and select **☰ → More tools → Word Wise → Underline difficult words**.
 
 Word Wise can update itself from signed-off GitHub release assets via **Word
 Wise → Updates**. It shows the release notes before installation, verifies the
@@ -21,23 +21,41 @@ checks release metadata; it never installs an update automatically.
 
 The plugin targets reflowable/crengine documents. Paging/fixed-layout documents are not currently supported because the overlay needs KOReader’s visible-word and screen-box APIs.
 
-## CEFR filtering
+## Offline Word Sense: reading levels
 
-The menu uses a **CEFR threshold** rather than the upstream 1–5 difficulty scale. A selected threshold shows hints at that level and above. For example, choosing `B2` permits `B2`, `C1`, and `C2` entries while hiding `A1`–`B1` entries.
+The plugin uses its existing local CEFR + WordNet SQLite database only:
+**no AI, network connection, API key or contextual inference**.
 
-CEFR levels are stored as `A1`, `A2`, `B1`, `B2`, `C1`, or `C2`. Unknown or malformed levels are ignored when building the database, rather than being silently assigned a level.
+Choose **Reading level** in the Word Wise menu:
 
-## Multiple hints and context selection
+| Reader proficiency | Words marked (CEFR) | Behavior |
+| --- | --- | --- |
+| Basic | A2–C2 | Most vocabulary help |
+| Intermediate | B1–C2 | Balanced; default for new users |
+| Advanced | C1–C2 | Only higher-level words |
 
-A word can have multiple senses. The database stores each sense as a separate row with a stable `sense_key`, part of speech, CEFR level, and source. The first eligible sense is shown by default.
+The original six CEFR labels remain in the database and sense picker. Old
+`wordwise_cefr_level` settings are mapped non-destructively: A1/A2 → Basic,
+B1/B2 → Intermediate, and C1/C2 → Advanced. A user-chosen Reading level
+takes precedence.
 
-Every dictionary sense stores a concise `short_def` for the page overlay and the attributed source text in `full_def`. The build pipeline removes domain labels, examples, parenthetical detail, and long explanatory tails from the inline form, then enforces a 72-character/12-word ceiling. This is deterministic extraction rather than an invented definition. Tapping the hint opens the complete `full_def` and the available senses.
+## Underline and tap to define
 
-Inline hints are also bounded to a compact rendered width. If a concise definition is still wider than the available space, the renderer uses a single ellipsis glyph (`…`) instead of spilling across the page. If an above-word hint would cross the top safe inset, the complete hint unit is placed below the word with an upward-pointing marker.
+Words meeting the proficiency threshold get a subtle wavy underline.
+**Tap an underlined word** to see its short WordNet meaning in a nearby
+bubble, without changing the book's line spacing. **Tap the bubble** to
+open the existing action dialog, which lists alternative senses and offers
+**Know/Show**, **Dictionary** and **Cancel**.
 
-Tap a visible hint to open the Word Wise action dialog. The full currently displayed definition appears in the title area, so that same sense is omitted from the selectable list below and is not duplicated. The alternative sense rows are left-aligned, show the CEFR/POS classification in a compact bold row, and use a fixed height so one-line and wrapped definitions remain visually aligned. The three action controls are placed in one horizontal row to reduce popup height. Selecting a sense saves it for that lemma and repaints the current page so the preferred gloss is shown on future occurrences.
+As before, a selected sense is remembered for the lemma. Marking a word
+as known hides its underlines; selected meanings and known words are stored
+outside the plugin directory and survive updates. A tap on unmarked text
+passes through to normal KOReader controls. Tapping away while a bubble is
+open dismisses it without also turning the page.
 
-The action row provides **Know** or **Show**, **Dictionary**, and **Cancel**. **Know/Show** suppresses or restores the entire lemma: pressing **Know** hides every sense and every inflected occurrence of that word. **Dictionary** invokes KOReader’s standard dictionary lookup for the underlying word. A tap outside a hint is deliberately not consumed, so Android page-turn gestures continue to work normally.
+When upgrading from older inline-gloss releases, the plugin restores the
+original per-book line spacing if it had been increased by Word Wise
+and the reader has not manually changed that setting.
 
 ## Database schema
 
@@ -91,6 +109,12 @@ Review the upstream repository’s licensing status before publishing a redistri
 
 ## Compatibility and stability notes
 
-The CEFR migration does not alter the page traversal, overlay painting, reflow hooks, line-spacing adjustment, or screen-box anchoring. Those are the stability-critical parts of the plugin. The migration changes database lookup and menu filtering only.
+The overlay currently supports reflowable/crengine documents, including
+EPUB where KOReader exposes visible-word and screen-box APIs. Fixed-layout
+PDF/DjVu support is not included in this fork.
 
-The main Android-specific risk is interaction: the hint tap zone is full-screen for priority purposes but consumes a gesture only when its coordinate intersects a rendered hint or its compact text box. This follows KOReader’s existing highlight interaction pattern and avoids stealing ordinary page turns. Layout checks the top and bottom safe insets before painting, truncates by measured glyph width rather than character count, and searches available horizontal gaps before dropping a colliding hint.
+Grapheme layout and underlines use KOReader's screen-box coordinates.
+The full-screen priority tap zone handles only matched words or dismissal
+of an already open bubble, so other taps preserve normal page turns.
+Font, margin, and layout changes trigger re-enumeration of the visible
+word positions. The offline database schema and updater are unchanged.
