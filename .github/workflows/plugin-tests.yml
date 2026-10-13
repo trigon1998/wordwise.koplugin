@@ -16,6 +16,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lua5.3
       - name: Check Lua syntax, SHA-256, morphology and reading levels
         run: lua5.3 tests/test_lua.lua .
+      - name: Check definition bubble geometry and cleanup
+        run: lua5.3 tests/test_bubble.lua .
       - name: Check offline dictionary and KOReader UI invariants
         run: python3 tests/test_cefr.py
       - name: Check WordNet grouping and sense ranking
