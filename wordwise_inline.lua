@@ -83,7 +83,15 @@ function Inline.paint(bb, x, y, hints, options)
         hint.hit_box, hint.inline_visible = nil, false
         local b = hint.box
         if b and b.w > 0 and b.h > 0 then
-            local text = Microgloss.format(hint.entry and hint.entry.gloss or hint.text, mode)
+            local definition = hint.entry and hint.entry.gloss or hint.text
+            local selected_text = definition
+            -- A simplified label is allowed only if it was reviewed and
+            -- matched against sense_key, source synset, word and part-of-speech.
+            -- Missing coverage is NEVER filled by guessing from another sense.
+            if options.meaning_source == "simplified" and options.reviewed_labels then
+                selected_text = options.reviewed_labels:get(hint.entry) or definition
+            end
+            local text = Microgloss.format(selected_text, mode)
             if text ~= "" and max_width > 0 then
                 local cache = hint._micro_cache
                 if not cache or cache.face ~= face or cache.source ~= text
@@ -96,8 +104,7 @@ function Inline.paint(bb, x, y, hints, options)
                         text_width = RenderText:sizeUtf8Text(
                             0, width, face, text, true, false).x
                     end
-                    cache = { face = face, source = Microgloss.format(
-                        hint.entry and hint.entry.gloss or hint.text, mode),
+                    cache = { face = face, source = Microgloss.format(selected_text, mode),
                         text = text, width = text_width,
                         max_width = max_width, length = mode }
                     hint._micro_cache = cache
