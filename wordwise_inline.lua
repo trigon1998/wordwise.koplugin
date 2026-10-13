@@ -81,7 +81,7 @@ function Inline.paint(bb, x, y, hints, options)
             if text ~= "" and max_width > 0 then
                 local cache = hint._micro_cache
                 if not cache or cache.face ~= face or cache.text ~= text
-                        or cache.max_width ~= max_width then
+                        or cache.max_width ~= max_width or cache.length ~= mode then
                     local text_width = RenderText:sizeUtf8Text(
                         0, width, face, text, true, false).x
                     if text_width > max_width then
@@ -93,9 +93,6 @@ function Inline.paint(bb, x, y, hints, options)
                     cache = { face = face, text = text, width = text_width,
                         max_width = max_width, length = mode }
                     hint._micro_cache = cache
-                elseif cache.length ~= mode then
-                    hint._micro_cache = nil
-                    cache = nil
                 end
                 if cache and cache.width > 0 and cache.width <= right - left then
                     local text_width = cache.width
