@@ -80,7 +80,7 @@ function Inline.paint(bb, x, y, hints, options)
             local text = Microgloss.format(hint.entry and hint.entry.gloss or hint.text, mode)
             if text ~= "" and max_width > 0 then
                 local cache = hint._micro_cache
-                if not cache or cache.face ~= face or cache.text ~= text
+                if not cache or cache.face ~= face or cache.source ~= text
                         or cache.max_width ~= max_width or cache.length ~= mode then
                     local text_width = RenderText:sizeUtf8Text(
                         0, width, face, text, true, false).x
@@ -90,7 +90,9 @@ function Inline.paint(bb, x, y, hints, options)
                         text_width = RenderText:sizeUtf8Text(
                             0, width, face, text, true, false).x
                     end
-                    cache = { face = face, text = text, width = text_width,
+                    cache = { face = face, source = Microgloss.format(
+                        hint.entry and hint.entry.gloss or hint.text, mode),
+                        text = text, width = text_width,
                         max_width = max_width, length = mode }
                     hint._micro_cache = cache
                 end
