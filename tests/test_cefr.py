@@ -55,6 +55,15 @@ assert 'self.bubble:contains(pos)' in main
 assert 'return false -- Ordinary page taps still pass through to KOReader' not in main
 assert 'self:restoreLegacyLineSpacing()' in main
 assert 'function WordWise:getDisplayMode()' in main
+assert 'function WordWise:getInlineMeaningSource()' in main
+assert 'function WordWise:setInlineMeaningSource(source)' in main
+assert 'wordwise_inline_meaning_source' in main
+assert 'WordWiseSenseLabels.load' in main
+assert 'reviewed_labels = self.reviewed_labels' in main
+assert 'wordwise_sense_labels.lua' in (ROOT / 'wordwise_ota.lua').read_text()
+assert 'wordwise_sense_labels.tsv' in (ROOT / 'wordwise_ota.lua').read_text()
+assert 'meaning_source == "simplified"' in (ROOT / 'wordwise_inline.lua').read_text()
+print('pilot_reviewed_synonyms_source_and_fallback_guards_ok')
 assert 'function WordWise:setDisplayMode(mode)' in main
 assert 'self.ui.doc_settings:saveSetting("wordwise_display_mode", mode)' in main
 assert 'function WordWise:enableInlineSpacing()' in main
