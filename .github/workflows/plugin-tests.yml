@@ -18,6 +18,8 @@ jobs:
         run: lua5.3 tests/test_lua.lua .
       - name: Check definition bubble geometry and cleanup
         run: lua5.3 tests/test_bubble.lua .
+      - name: Check inline microgloss placement and geometry
+        run: lua5.3 tests/test_inline.lua .
       - name: Check offline dictionary and KOReader UI invariants
         run: python3 tests/test_cefr.py
       - name: Check WordNet grouping and sense ranking
