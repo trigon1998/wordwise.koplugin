@@ -96,4 +96,34 @@ assert(candidates == 5 and shown < candidates, "expected collision fallback")
 for _, hint in ipairs(crowded) do
     assert(hint.inline_visible or hint.hit_box == nil)
 end
+-- Two independent settings: definition length and meaning source.
+-- A reviewed synonym is shown ONLY in simplified mode, and a missing review
+-- always falls back to the dictionary without changing the selected sense.
+local sense_hint = {
+    box = { x = 160, y = 490, w = 120, h = 34 },
+    entry = {
+        word = "perfunctory", pos = "adjective",
+        sense_key = "1234567890abcdef",
+        source = "oewn:2024:ewn-01234567-a",
+        gloss = "done quickly and without much care or interest",
+    },
+    cefr_rank = 5,
+}
+local review = { get = function(_, entry)
+    if entry.sense_key == "1234567890abcdef" then return "cursory" end
+end }
+Inline.paint(bb, 0, 0, {sense_hint},
+    { face = font, length = "micro", line_spacing = 170,
+      meaning_source = "dictionary", reviewed_labels = review })
+local dictionary_text = text_painted[#text_painted]
+Inline.paint(bb, 0, 0, {sense_hint},
+    { face = font, length = "micro", line_spacing = 170,
+      meaning_source = "simplified", reviewed_labels = review })
+assert(text_painted[#text_painted] == "cursory")
+assert(dictionary_text ~= "cursory")
+Inline.paint(bb, 0, 0, {sense_hint},
+    { face = font, length = "micro", line_spacing = 170,
+      meaning_source = "simplified", reviewed_labels = {get = function() return nil end} })
+assert(text_painted[#text_painted] == dictionary_text)
+
 print("microgloss_inline_paint_tap_targets_and_cache_ok")
