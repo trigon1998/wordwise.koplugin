@@ -2,7 +2,7 @@
 
 **Read more. Look up less. Understand more.**
 
-Word Wise is an offline vocabulary companion for **KOReader on Android**. It gently underlines difficult words inside your book. Tap an underlined word for a short **WordNet definition** in a nearby bubble. Tap again to browse other meanings, choose the one you prefer, or mark a word as known. Your original book and line spacing stay intact.
+Word Wise is an offline vocabulary companion for **KOReader on Android**. It provides **two display modes**: **Inline hints** show tiny WordNet definition excerpts above difficult words, while **Tap to define** underlines them and shows a nearby bubble when tapped. Both modes use the same offline dictionary, selected senses, CEFR filters and known-word list.
 
 **Latest:** [v0.2.14 — Offline Word Sense](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.14) · **English definitions** · **No AI or API key** · **Offline reading**
 
@@ -10,12 +10,30 @@ Word Wise is an offline vocabulary companion for **KOReader on Android**. It gen
 
 *Illustrative concept of the v0.2.14 reading experience — not a screenshot captured on a real KOReader device.*
 
+## Display modes and glanceable inline hints
+
+From an open book, use **More tools → Word Wise → Display mode** to switch:
+
+| Setting | Behavior |
+| --- | --- |
+| **Tap to define** (default) | Underline difficult words; tap one for a short popup, then tap that bubble for more meanings. No extra line spacing. |
+| **Inline hints** | Show very short English meaning snippets above difficult words. Tap a hint or its word for the complete multi-sense dialog. |
+
+Your choice is **saved per book**. The chosen CEFR level, WordNet dictionary and known-word list are shared.
+
+**Inline detail** (shown only for Inline hints) controls how much text appears:
+
+- **Micro** (default): up to **4 words / 34 characters**.
+- **Short**: up to **6 words / 50 characters**.
+
+Rather than guessing a synonym, these microglosses are **extractive snippets of the existing selected WordNet sense**. A trailing ellipsis tells you that the full definition contains more information. Tap the hint whenever you need the complete meaning. This keeps the plugin offline, fast and transparent about ambiguity.
+
 ## Features
 
 | Feature | Description |
 | --- | --- |
-| **Discreet underlines** | Difficult words get subtle wavy underlines instead of definitions above the text. |
-| **Tap to define** | See a short English explanation directly beside the word. |
+| **Two display modes** | Choose **Inline hints** or **Tap to define** separately for each book. |
+| **Inline microglosses** | Get an extractive 4-word definition snippet above a word, or choose up to 6 words. |\n| **Tap to define** | See a short English explanation beside an underlined word. |
 | **Multiple meanings** | Choose among locally stored WordNet senses and remember your preference. |
 | **Reading levels** | Basic, Intermediate and Advanced determine how many words are marked. |
 | **Know / Show** | Hide words you know; restore them whenever you need. |
@@ -30,9 +48,9 @@ The local SQLite dictionary combines **CEFR-J** and **Octanove** word-level prof
 
 *UI illustration. Real fonts, layout, available senses, and button sizes depend on your KOReader build and dictionary.*
 
-1. **Read:** Difficult words matching your chosen reading level are underlined.
-2. **Tap a word:** A small bubble shows a concise offline definition.
-3. **Tap the bubble:** Open the existing Word Wise dialog to browse other meanings, save a preferred sense, select **Know/Show**, or launch the native **Dictionary**.
+1. **Choose a display mode:** Inline hints or Tap to define.
+2. **In Tap mode:** Tap an underlined word for a nearby offline definition.
+3. **In Inline mode:** Read the very short hint at a glance, or tap it to open the Word Wise dialog with other meanings, **Know/Show** and **Dictionary**.
 
 Normal taps on unmarked text still go to KOReader's reading controls. A tap outside an open bubble dismisses it without simultaneously turning the page.
 
@@ -81,7 +99,7 @@ Marking **Know** removes underlines for that lemma, including other occurrences 
 
 Use **Word Wise → Known words file** to find the data directory. Optionally override the bundled dictionary with a compatible `wordwise.db` in that data folder.
 
-**Line spacing:** v0.2.14 does not reserve extra space for definitions. For previous versions that raised the line spacing, Word Wise restores the saved per-book value on upgrade if you have not manually changed it.
+**Line spacing:** Tap mode retains the book's original spacing. Inline mode temporarily raises it to accommodate hints; returning to Tap mode or disabling Word Wise restores the saved value unless the reader deliberately changed it.
 
 ## Compatibility and limitations
 
