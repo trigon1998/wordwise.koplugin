@@ -22,6 +22,10 @@ function Microgloss.format(text, mode)
     local max_words, max_chars = limits[mode].words, limits[mode].chars
     local clean = text:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     clean = clean:gsub("^%([^)]-%)%s*", "")
+    -- Articles add almost no meaning to a short above-word label. Omitting one
+    -- frees a word slot for the informative part of the same WordNet sense:
+    -- "a dishonest or fraudulent person" -> "dishonest or fraudulent person".
+    clean = clean:gsub("^[Aa]n?%s+", ""):gsub("^[Tt]he%s+", "")
     if clean == "" then return "" end
 
     -- Prefer an intact short clause over splitting a definition at a comma.
