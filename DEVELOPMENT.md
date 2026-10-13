@@ -1,5 +1,84 @@
 # Word Wise for KOReader Android — Development Guide
 
+## Experimental pilot — sense-accurate simplified labels
+
+This branch adds a second independent Inline source setting: `dictionary`
+or `simplified`. The default is dictionary. Reviewed labels are loaded from
+`wordwise_sense_labels.tsv`, mapped to exact
+`(sense_key, word, part-of-speech, source)`. The `source` must identify an
+Open English WordNet **2024 synset**. This alignment already exists in
+`wordwise.db` for most OEWN records; curated non-OEWN entries fall back.
+
+In `simplified` mode:
+1. Try the exact reviewed label from `wordwise_sense_labels.lua`.
+2. If missing, mismatched, or not approved: display the original WordNet
+   definition and apply the selected Micro or Short display limit.
+3. Never make a new synonym from an unrelated sense, hypernym, antonym or
+   semantically similar embedding.
+4. Existing sense choices, CEFR filters, and Known Words remain untouched.
+
+The checked-in TSV has **no approved entries yet**; don't merge and publish
+a release until the review data has sufficient audited coverage. Loading an
+empty file is intentional and safe.
+
+### Building review candidates (offline builder, not an on-device AI feature)
+
+Install `wn` and the *exact* 2024 OEWN dataset, used by the original
+dictionary builder:
+
+```sh
+python -m pip install wn
+python -m wn download oewn:2024
+python tools/build_synonym_candidates.py --db wordwise.db --out synonym_review_candidates.csv
+```
+
+The generator considers only alternative lemmas in the SAME WordNet synset,
+limits them to a compact label, checks the part of speech, and favors
+candidates with a CEFR label no harder than the current headword.
+**These filters produce candidates, not proven interchangeable synonyms.**
+CEFR is tagged at the word level, not necessarily the individual sense.
+
+Editors must examine every candidate against its source full definition,
+part of speech and register. Ambiguous words, phrasal verbs, culturally
+specific references, slang, negatives and connotations should be audited
+manually. A 1-to-3-word explanatory paraphrase is an acceptable replacement
+when no *semantically equivalent* synonym is short, familiar and precise.
+
+For a batch to be released, export only rows marked `APPROVED`, with two
+distinct human review identifiers, using:
+
+```sh
+python tools/export_approved_sense_labels.py \
+  --reviewed synonym_review_candidates.csv \
+  --db wordwise.db \
+  --out wordwise_sense_labels.tsv
+```
+
+The exporter rejects changes to the `sense_key`, `source`, `word`,
+`pos` or full WordNet definition; it also refuses missing reviewers, duplicate
+approved senses and invalid labels. Generated candidates are never inserted
+without explicit double approval.
+
+### Pre-release evaluation gates
+
+These are **proposed release gates**, not achieved metrics:
+
+- Conduct blinded editorial review of **at least 200 randomly sampled,
+  proposed labels**, enriched with **100 ambiguous/polysemous senses**.
+- Require **at least 98% sense-correctness** in independent review and
+  adjudicate all reviewer disagreements. Record whether the concise label is
+  actually *easier* to understand than the original WordNet gloss.
+- Report **coverage** separately: proportion of total eligible senses with
+  approved labels, and proportion of common words encountered in English
+  reading pages with approved labels. Never optimize coverage by inventing
+  unsupported synonyms.
+- Regression-test examples across nouns, adjectives, verbs, adverbs, uncommon
+  senses, register differences, unknown user-supplied DB schema, and user
+  choices. Confirm that mismatched/unapproved labels fall back.
+- Verify performance/memory on physical KOReader Android hardware; the
+  on-device work is an O(1) lookup after a one-time small TSV load, not a
+  network call.
+
 ## v0.2.15 — Dual display
 
 The plugin now supports two interchangeable presentation modes, stored per book
