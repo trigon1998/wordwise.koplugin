@@ -4,7 +4,7 @@
 
 Word Wise is an offline vocabulary companion for **KOReader on Android**. It provides **two display modes**: **Inline hints** show tiny WordNet definition excerpts above difficult words, while **Tap to define** underlines them and shows a nearby bubble when tapped. Both modes use the same offline dictionary, selected senses, CEFR filters and known-word list.
 
-**Latest:** [v0.2.14 — Offline Word Sense](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.14) · **English definitions** · **No AI or API key** · **Offline reading**
+**Latest:** [v0.2.15 — Dual Display](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.15) · **English definitions** · **No AI or API key** · **Offline reading**
 
 ![Word Wise reading preview showing wavy underlines and a nearby definition bubble](docs/images/wordwise-reader-preview.svg)
 
@@ -71,8 +71,8 @@ These are **reader proficiency modes**, not three exclusive sets of words. The o
 ### Updating an existing installation
 
 1. Open a reflowable book in KOReader and select **More tools → Word Wise → Updates → Check for updates**.
-2. Choose [**v0.2.14**](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.14), review the notes, and confirm the update and restart.
-3. Turn on **Word Wise → Underline difficult words**, then set your **Reading level**.
+2. Choose [**v0.2.15**](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.15), review the notes, and confirm the update and restart.
+3. Enable Word Wise, choose **Display mode → Inline hints / Tap to define**, and set your Reading level.
 
 The updater verifies the release ZIP against its published SHA-256 checksum before installation. The network is needed for **checking and downloading updates only** — word lookups stay offline.
 
@@ -81,7 +81,7 @@ The updater verifies the release ZIP against its published SHA-256 checksum befo
 1. Download [**wordwise.koplugin.zip**](https://github.com/trigon1998/wordwise.koplugin/releases/latest).
 2. Extract the ZIP; the folder must be named exactly `wordwise.koplugin`.
 3. Copy the directory into the KOReader plugins folder, usually `koreader/plugins/`.
-4. Restart KOReader, open a reflowable book, and enable **More tools → Word Wise → Underline difficult words**.
+4. Restart KOReader, open a reflowable book, and enable **More tools → Word Wise → Enable Word Wise** and select your display mode.
 
 > **Important:** This is a KOReader plugin, not an Android APK. `main.lua` and `wordwise.db` should sit directly inside `wordwise.koplugin/`.
 
@@ -152,4 +152,4 @@ The upstream project has no clearly recognized GitHub license. Before redistribu
 
 ---
 
-[**Latest release**](https://github.com/trigon1998/wordwise.koplugin/releases/latest) · [**v0.2.14 release notes**](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.14) · [**Development guide**](DEVELOPMENT.md)
+[**Latest release**](https://github.com/trigon1998/wordwise.koplugin/releases/latest) · [**v0.2.15 release notes**](https://github.com/trigon1998/wordwise.koplugin/releases/tag/v0.2.15) · [**Development guide**](DEVELOPMENT.md)
