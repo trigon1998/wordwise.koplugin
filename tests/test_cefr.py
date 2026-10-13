@@ -112,8 +112,8 @@ assert 'checksum_url' in ota and 'SHA256.digest_file' in ota
 assert 'MAX_EXTRACTED_SIZE' in ota and 'MAX_ARCHIVE_ENTRIES' in ota
 assert 'wordwise_hint_dialog.lua' in ota and 'wordwise_l10n.lua' in ota
 assert 'archive version does not match release tag' in ota
-assert 'current_version = "0.2.13"' in ota
-assert 'version = "0.2.13"' in meta
+assert 'current_version = "0.2.14"' in ota
+assert 'version = "0.2.14"' in meta
 assert 'known_words.lua' in (ROOT / 'DEVELOPMENT.md').read_text()
 print('ota_contract_guards_ok')
 db_lua = (ROOT / 'wordwise_db.lua').read_text()
