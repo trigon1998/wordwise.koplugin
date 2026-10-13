@@ -3,15 +3,10 @@ Word Wise: underline difficult words and show offline definitions on tap
 on the ORIGINAL book — no copy, no file rewrite.
 
 How it works:
-  * A view module registered with ReaderView paints gloss strings on top of the
-    page. For the current page we walk the visible words, look each up in the
-    dictionary, and remember a screen box + gloss for the difficult ones.
-  * To leave room for the gloss above each line, we raise the document's line
-    spacing uniformly (setInterlineSpacePercent). Every line gets the same
-    height whether or not it carries a hint, and an interline change only
-    re-renders (it never rebuilds the DOM, so no "reload document?" prompt).
-  * Hints are recomputed on every page turn / re-render, so only the visible
-    page is ever processed.
+  * Walk visible words, selecting offline WordNet meanings using CEFR thresholds.
+  * Paint subtle underlines inside the original word boxes, without reflow.
+  * Tap an underline for a short meaning; tap the bubble for the sense picker.
+  * Recompute box positions on page turns and layout changes.
 
 @module koplugin.wordwise
 --]]--
@@ -46,7 +41,6 @@ local WW_DIR = DataStorage:getDataDir() .. "/wordwise"
 local STATE_PATH = WW_DIR .. "/state.lua"
 local KNOWN_WORDS_PATH = WW_DIR .. "/known_words.lua"
 local CHECK_UPDATES_SETTING = "wordwise_check_updates"
-local MAX_INLINE_HINT_WIDTH = 240
 
 -- Directory this plugin was loaded from, used to find the bundled dictionary.
 local PLUGIN_ROOT = debug.getinfo(1, "S").source:gsub("^@", ""):gsub("[^/\\]+$", "")
@@ -493,7 +487,6 @@ end
 function WordWise:computePageHints()
     if self.bubble then self.bubble:close() end
     self.hints = {}
-    self.text_col = nil
     if not (self:isEnabled() and self:isSupportedDocument()) then return end
     local db = self:getDB()
     if not db then return end
@@ -503,7 +496,6 @@ function WordWise:computePageHints()
     if not start_xp then return end
     local cefr_rank = self:getCEFRRank()
 
-    local first_xp, last_xp
     local xp = doc:getNextVisibleWordStart(start_xp)
     local guard = 0
     while xp and guard < WORD_WALK_GUARD do
@@ -511,8 +503,6 @@ function WordWise:computePageHints()
         if not doc:isXPointerInCurrentPage(xp) then break end
         local end_xp = doc:getNextVisibleWordEnd(xp)
         if not end_xp then break end
-        first_xp = first_xp or xp
-        last_xp = end_xp
         local word = doc:getTextFromXPointers(xp, end_xp)
         if word then
             local key = lookupKey(word)
@@ -540,17 +530,7 @@ function WordWise:computePageHints()
         xp = nxt
     end
 
-    if first_xp and last_xp then
-        local line_boxes = doc:getScreenBoxesFromPositions(first_xp, last_xp, true)
-        local lo, hi
-        for _, b in ipairs(line_boxes or {}) do
-            if b.w > 0 then
-                if not lo or b.x < lo then lo = b.x end
-                if not hi or b.x + b.w > hi then hi = b.x + b.w end
-            end
-        end
-        if lo and hi and hi > lo then self.text_col = { left = lo, right = hi } end
-    end
+
 end
 
 -- Hit-test only rendered hints. A miss deliberately returns false so KOReader's
