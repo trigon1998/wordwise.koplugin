@@ -1,5 +1,5 @@
 -- KOReader inline gloss painter, adapted from the proven Word Wise v0.2.13
--- renderer. Keeps the overlap guard and the top-edge fallback but replaces
+-- renderer. Boxes from crengine are already screen-relative: do not add the\n-- ReaderView paint origin a second time. Keeps top-edge fallback but replaces
 -- long dictionary descriptions with extractive microgloss labels.
 local Blitbuffer = require("ffi/blitbuffer")
 local Font = require("ui/font")
@@ -150,12 +150,12 @@ function Inline.paint(bb, x, y, hints, options)
                     x = xx - 3, y = item.ttop - 2,
                     w = item.width + 6, h = item.tbottom - item.ttop + 4,
                 }
-                RenderText:renderUtf8Text(bb, x + xx, y + item.baseline,
+                RenderText:renderUtf8Text(bb, xx, item.baseline,
                     face, item.text, true, false, color)
                 local cx = math.max(xx + CARET_DEPTH,
                     math.min(xx + item.width - CARET_DEPTH, item.word_cx))
                 if item.width >= CARET_DEPTH * 2 then
-                    caret(bb, cx, item.marker, item.below, color, x, y)
+                    caret(bb, cx, item.marker, item.below, color, 0, 0)
                 end
             end
         end
