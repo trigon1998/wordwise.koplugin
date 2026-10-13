@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+<title id="title">Word Wise for KOReader — offline word hints while reading</title>
+<desc id="desc">Concept illustration showing difficult words underlined in an ebook and a short definition bubble after tapping a word. Not an actual KOReader screenshot.</desc>
+<defs>
+  <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#f8f8f5"/><stop offset="1" stop-color="#edece7"/></linearGradient>
+  <filter id="shadow" x="-15%" y="-15%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#2b2b2b" flood-opacity=".13"/></filter>
+  <pattern id="dots" width="19" height="19" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1" fill="#d2d1ca" opacity=".56"/></pattern>
+</defs>
+<rect width="1280" height="640" rx="22" fill="url(#bg)"/>
+<rect x="0" y="0" width="1280" height="640" rx="22" fill="url(#dots)" opacity=".42"/>
+<rect x="62" y="59" width="58" height="58" rx="15" fill="#282b2b"/>
+<path d="M78 79 q14 -7 27 2 v21 q-13 -9 -27 -2 z" fill="#fff" opacity=".95"/>
+<path d="M104 81 q14 -9 25 -2 v21 q-12 -7 -25 2 z" transform="translate(-2 0)" fill="#fff" opacity=".95"/>
+<path d="M103 82 v22" stroke="#282b2b" stroke-width="2"/>
+<text x="137" y="84" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#62645f" font-weight="700" letter-spacing="3">KOREADER PLUGIN</text>
+<text x="137" y="111" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#2b2d2c" font-weight="700">Offline vocabulary companion</text>
+<text x="65" y="202" font-family="Arial, Helvetica, sans-serif" font-size="64" fill="#232626" font-weight="800" letter-spacing="-2">Word Wise</text>
+<text x="67" y="251" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#444847" font-weight="600">Read more. Look up less.</text>
+<text x="68" y="308" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#606460">Discover challenging words in place.</text>
+<text x="68" y="338" font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#606460">Tap for a clear meaning — stay in your book.</text>
+<rect x="68" y="384" width="116" height="38" rx="19" fill="#fff" stroke="#b5b7b0"/>
+<text x="126" y="409" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#303332" font-weight="700" text-anchor="middle">OFFLINE</text>
+<rect x="195" y="384" width="130" height="38" rx="19" fill="#fff" stroke="#b5b7b0"/>
+<text x="260" y="409" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#303332" font-weight="700" text-anchor="middle">WORDNET</text>
+<rect x="336" y="384" width="121" height="38" rx="19" fill="#fff" stroke="#b5b7b0"/>
+<text x="396" y="409" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#303332" font-weight="700" text-anchor="middle">NO AI</text>
+<path d="M68 475 h440" stroke="#c6c6c0" stroke-width="1"/>
+<text x="70" y="513" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#313534" font-weight="700">01</text>
+<text x="112" y="513" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#494d4b">Underline difficult words</text>
+<text x="70" y="550" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#313534" font-weight="700">02</text>
+<text x="112" y="550" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#494d4b">Tap for an instant definition</text>
+<text x="70" y="587" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#313534" font-weight="700">03</text>
+<text x="112" y="587" font-family="Arial, Helvetica, sans-serif" font-size="17" fill="#494d4b">Explore other meanings</text>
+
+<!-- Grayscale e-reader concept panel -->
+<rect x="606" y="49" width="612" height="543" rx="22" fill="#fff" stroke="#777a76" stroke-width="2" filter="url(#shadow)"/>
+<rect x="628" y="71" width="568" height="497" rx="8" fill="#fff"/>
+<text x="663" y="106" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#898b87" letter-spacing="3">A QUIET DEPARTURE</text>
+<line x1="664" y1="122" x2="1157" y2="122" stroke="#dddcd7"/>
+<text x="667" y="179" font-family="Georgia, 'Times New Roman', serif" font-size="24" fill="#2b2d2c">She gave him a perfunctory smile,</text>
+<path d="M838 187 q5 -4 10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0" fill="none" stroke="#858783" stroke-width="2"/>
+<text x="667" y="220" font-family="Georgia, 'Times New Roman', serif" font-size="24" fill="#2b2d2c">then left without another word.</text>
+<text x="667" y="296" font-family="Georgia, 'Times New Roman', serif" font-size="24" fill="#2b2d2c">He felt bewildered by the silence</text>
+<path d="M748 304 q5 -4 10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0 t10 0" fill="none" stroke="#6c706d" stroke-width="2"/>
+<text x="667" y="338" font-family="Georgia, 'Times New Roman', serif" font-size="24" fill="#2b2d2c">that followed.</text>
+<!-- Bubble painted near tapped word, not an actual device capture -->
+<path d="M813 357 l12 -15 12 15" fill="#fff" stroke="#484c49" stroke-width="1.5"/>
+<rect x="756" y="356" width="403" height="148" rx="13" fill="#fff" stroke="#484c49" stroke-width="2" filter="url(#shadow)"/>
+<text x="776" y="392" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#2a2d2c">bewildered</text>
+<line x1="777" y1="407" x2="1137" y2="407" stroke="#e0e1dc"/>
+<text x="777" y="436" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#454a47">Confused; unable to understand.</text>
+<text x="777" y="477" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#7a7e79">Tap for meanings / Know / Dictionary  →</text>
+<line x1="664" y1="538" x2="1158" y2="538" stroke="#dedfdb"/>
+<text x="668" y="554" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#878984">WORD WISE  ·  OFFLINE</text>
+<text x="1149" y="554" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#878984" text-anchor="end">Illustrative UI</text>
+</svg>
