@@ -100,7 +100,7 @@ def rows_for_review(db_path, lexicon, levels, limit=None):
                     "candidate": alternatives[0],
                     "other_candidates": " | ".join(alternatives[1:]),
                     "kind": "synonym", "review_status": "PENDING",
-                    "review_note": "",
+                    "reviewer_1": "", "reviewer_2": "", "review_note": "",
                 }
                 n += 1
                 if limit and n >= limit:
@@ -122,7 +122,8 @@ def main():
     levels = load_cefr_profiles([args.cefrj, args.octanove])
     fieldnames = [
         "sense_key", "word", "pos", "source", "definition",
-        "candidate", "other_candidates", "kind", "review_status", "review_note",
+        "candidate", "other_candidates", "kind", "review_status",
+        "reviewer_1", "reviewer_2", "review_note",
     ]
     with Path(args.out).open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames)
