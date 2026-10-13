@@ -78,6 +78,7 @@ function Inline.paint(bb, x, y, hints, options)
         local b = hint.box
         if b and b.w > 0 and b.h > 0 then
             local text = Microgloss.format(hint.entry and hint.entry.gloss or hint.text, mode)
+            print("INLINE_DEBUG_A", tostring(text), tostring(max_width), tostring(b.w), tostring(b.h))
             if text ~= "" and max_width > 0 then
                 local cache = hint._micro_cache
                 if not cache or cache.face ~= face or cache.text ~= text
@@ -94,6 +95,7 @@ function Inline.paint(bb, x, y, hints, options)
                         max_width = max_width, length = mode }
                     hint._micro_cache = cache
                 end
+                print("INLINE_DEBUG_B", tostring(cache and cache.width), tostring(right-left))
                 if cache and cache.width > 0 and cache.width <= right - left then
                     local text_width = cache.width
                     local preferred = math.floor(b.x + (b.w - text_width) / 2 + .5)
