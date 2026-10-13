@@ -1,5 +1,25 @@
 # Word Wise for KOReader Android — Development Guide
 
+## v0.2.15 — Dual display
+
+The plugin now supports two interchangeable presentation modes, stored per book
+as `wordwise_display_mode`:
+
+- **tap** (default): subtle wavy underlines and non-modal definition bubble;
+  existing KOReader line spacing remains unchanged
+- **inline**: short labels above eligible words via `wordwise_inline.lua`,
+  with temporary line-spacing expansion and safe restoration on mode switch
+
+Inline labels are extracted by `wordwise_microgloss.lua` from the selected
+WordNet sense, limited to four words/34 characters by default or six words/
+50 characters with Inline detail. They do not invent new synonyms, infer
+context, or require an online model. Tapping any *visible* inline label or
+its word opens the existing full multi-sense dialog.
+
+The two modes share CEFR filters, known words and saved senses; the inline
+renderer retains collision guards and a top-edge fallback. The new modules
+are mandatory in OTA archives and covered by headless Lua tests.
+
 ## 1. Project scope
 
 This is an Android-focused offline KOReader vocabulary overlay fork of
