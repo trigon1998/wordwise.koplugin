@@ -32,6 +32,28 @@ Rather than guessing a synonym, these microglosses are **extractive snippets of 
 
 When words appear too close together for above-word definitions to fit without overlapping, the plugin now gives those words a **subtle underline as a fallback**. Tapping such a word still opens the full WordNet senses. It is intentionally not possible to display every inline label without covering nearby text, particularly at high vocabulary densities.
 
+## Experimental: choose the Inline meaning source
+
+**This feature is in a development branch, not the stable v0.2.16 OTA.**
+
+The Inline mode has two *independent* settings:
+
+- **Inline meaning → Dictionary definition** (default): uses the selected
+  sense's original short WordNet definition, with Micro/Short length controls.
+- **Inline meaning → Reviewed synonym / short phrase**: first looks for a
+  reviewed, sense-specific, concise label. If no verified label exists, it
+  displays the **same WordNet definition as the Dictionary option**.
+
+A simplified label must match four fields from the currently selected entry:
+`sense_key`, `word`, `pos`, and exact `source` (`oewn:2024:<synset>`).
+There is no AI guessing and no cross-sense synonym reuse.
+
+**Data-quality gate:** The checked-in `wordwise_sense_labels.tsv` is currently
+empty by design. Therefore, the two modes deliberately look identical until
+reviewed labels are published. Generated synonym candidates are **not**
+automatically displayed or included in releases. The candidate and human review
+workflow is documented in [`DEVELOPMENT.md`](DEVELOPMENT.md).
+
 ## Features
 
 | Feature | Description |
