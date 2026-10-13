@@ -102,7 +102,11 @@ function WordWise:enableInlineSpacing()
     if not ds or not conf then return end
     local before = tonumber(conf.line_spacing) or 100
     local target = math.max(before, 170)
-    if not ds:has("wordwise_previous_line_spacing") then
+    local applied = ds:readSetting("wordwise_applied_line_spacing")
+    if not ds:has("wordwise_previous_line_spacing")
+            or (applied ~= nil and applied ~= before) then
+        -- The reader changed line spacing manually while inline hints were on.
+        -- Their new value takes precedence over the old saved preference.
         ds:saveSetting("wordwise_previous_line_spacing", before)
     end
     ds:saveSetting("wordwise_applied_line_spacing", target)
