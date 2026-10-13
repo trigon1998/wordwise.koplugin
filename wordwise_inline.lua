@@ -133,6 +133,7 @@ function Inline.paint(bb, x, y, hints, options)
     end)
 
     local placed = {}
+    local rendered_count = 0
     local color = Blitbuffer.COLOR_BLACK
     for _, item in ipairs(items) do
         if item.ttop >= 4 and item.tbottom < height - 4 then
@@ -141,6 +142,7 @@ function Inline.paint(bb, x, y, hints, options)
             local xx = slot(item, intervals, left, right)
             if xx then
                 intervals[#intervals + 1] = { xx, xx + item.width }
+                rendered_count = rendered_count + 1
                 item.hint.inline_visible = true
                 item.hint.hit_box = {
                     x = xx - 3, y = item.ttop - 2,
@@ -156,6 +158,7 @@ function Inline.paint(bb, x, y, hints, options)
             end
         end
     end
+    return #items, rendered_count
 end
 
 return Inline
