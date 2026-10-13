@@ -1,5 +1,5 @@
 --[[--
-Word Wise: underline difficult words and show offline definitions on tap
+Word Wise: switch between inline microgloss hints and tap-to-define underlines
 on the ORIGINAL book — no copy, no file rewrite.
 
 How it works:
@@ -16,6 +16,7 @@ local DataStorage = require("datastorage")
 local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
+local Font = require("ui/font")
 local ConfirmBox = require("ui/widget/confirmbox")
 local WordWiseHintDialog = require("wordwise_hint_dialog")
 local UIManager = require("ui/uimanager")
@@ -31,6 +32,8 @@ local T = require("ffi/util").template
 local WordWiseDB = require("wordwise_db")
 local ReadingLevel = require("wordwise_reading_level")
 local WordWiseBubble = require("wordwise_bubble")
+local WordWiseInline = require("wordwise_inline")
+local WordWiseMicrogloss = require("wordwise_microgloss")
 local WordWiseL10N = require("wordwise_l10n")
 local WordWiseOTA = require("wordwise_ota")
 
@@ -72,6 +75,61 @@ end
 
 function WordWise:getCEFRRank()
     return CEFR_RANK[ReadingLevel.threshold(self:getReadingLevel())]
+end
+
+-- Persist presentation independently for each book; existing books stay in Tap mode.
+function WordWise:getDisplayMode()
+    local ds = self.ui and self.ui.doc_settings
+    local mode = ds and ds:readSetting("wordwise_display_mode")
+    return mode == "inline" and "inline" or "tap"
+end
+
+function WordWise:getInlineHintLength()
+    local value = G_reader_settings:readSetting("wordwise_inline_hint_length")
+    return WordWiseMicrogloss.isValidLength(value) and value or "micro"
+end
+
+function WordWise:setInlineHintLength(length)
+    if not WordWiseMicrogloss.isValidLength(length) then return end
+    G_reader_settings:saveSetting("wordwise_inline_hint_length", length)
+    self:refresh()
+end
+
+function WordWise:enableInlineSpacing()
+    if not self:isSupportedDocument() then return end
+    local ds = self.ui.doc_settings
+    local conf = self.ui.font and self.ui.font.configurable
+    if not ds or not conf then return end
+    local before = tonumber(conf.line_spacing) or 100
+    local target = math.max(before, 170)
+    local applied = ds:readSetting("wordwise_applied_line_spacing")
+    if not ds:has("wordwise_previous_line_spacing")
+            or (applied ~= nil and applied ~= before) then
+        -- The reader changed line spacing manually while inline hints were on.
+        -- Their new value takes precedence over the old saved preference.
+        ds:saveSetting("wordwise_previous_line_spacing", before)
+    end
+    ds:saveSetting("wordwise_applied_line_spacing", target)
+    if before ~= target then
+        conf.line_spacing = target
+        self.ui.document:setInterlineSpacePercent(target)
+        self.ui:handleEvent(Event:new("UpdatePos"))
+    end
+end
+
+function WordWise:setDisplayMode(mode)
+    if mode ~= "tap" and mode ~= "inline" then return end
+    if mode == self:getDisplayMode() then return end
+    self.ui.doc_settings:saveSetting("wordwise_display_mode", mode)
+    if self.bubble then self.bubble:close() end
+    if self:isEnabled() then
+        if mode == "inline" then
+            self:enableInlineSpacing()
+        else
+            self:restoreLegacyLineSpacing()
+        end
+    end
+    self:refresh()
 end
 
 function WordWise:getNotifyUpdates()
@@ -245,6 +303,7 @@ function WordWise:init()
     self.ui.menu:registerToMainMenu(self)
     -- infofont is NotoSans (proportional), suitable for compact glosses.
     self.bubble = WordWiseBubble.new()
+    self.gloss_face = Font:getFace("infofont", 11)
     self.hints = {}
     self:getState()
     -- Register the paint-only overlay. Tap handling is registered separately on
@@ -391,7 +450,11 @@ end
 function WordWise:onReaderReady()
     self:setupTouchZones()
     if not self:isSupportedDocument() then return end
-    self:restoreLegacyLineSpacing()
+    if self:isEnabled() and self:getDisplayMode() == "inline" then
+        self:enableInlineSpacing()
+    else
+        self:restoreLegacyLineSpacing()
+    end
     if self:isEnabled() and self:hasDB() then
         -- Coalesce the initial reader event with any immediate PosUpdate or
         -- rerender event emitted while the document settles.
@@ -565,6 +628,16 @@ function WordWise:onHintTap(ges)
     local pos = ges.pos
     if not pos then return false end
 
+    if self:getDisplayMode() == "inline" then
+        for _, hint in ipairs(self.hints or {}) do
+            if hint.inline_visible and (
+                    pointInBox(pos, hint.box) or pointInBox(pos, hint.hit_box)) then
+                return self:showHintActions(hint)
+            end
+        end
+        return false
+    end
+
     if self.bubble and self.bubble:contains(pos) then
         local hint = self.bubble.hint
         self.bubble:close()
@@ -614,6 +687,14 @@ end
 function WordWise:paintHints(bb, x, y)
     if not self:isEnabled() then return end
     x, y = x or 0, y or 0
+    if self:getDisplayMode() == "inline" then
+        return WordWiseInline.paint(bb, x, y, self.hints, {
+            face = self.gloss_face,
+            line_spacing = self.ui.font and self.ui.font.configurable
+                and self.ui.font.configurable.line_spacing or 100,
+            length = self:getInlineHintLength(),
+        })
+    end
     local step = math.max(1, math.floor(Screen:scaleBySize(2)))
     local thickness = math.max(1, math.floor(Screen:scaleBySize(1)))
     local wave = { 0, 1, 2, 1 }
@@ -786,7 +867,11 @@ function WordWise:setEnabled(on)
         return
     end
     self.ui.doc_settings:saveSetting("wordwise_enabled", on) -- per-book
-    self:restoreLegacyLineSpacing()
+    if on and self:getDisplayMode() == "inline" then
+        self:enableInlineSpacing()
+    else
+        self:restoreLegacyLineSpacing()
+    end
     if on then
         self:refresh()
     else
@@ -816,10 +901,55 @@ end
 function WordWise:getSubMenu()
     return {
         {
-            text = self:tr("show_underlines"),
+            text = self:tr("toggle_hints"),
             checked_func = function() return self:isEnabled() end,
             enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
             callback = function() self:setEnabled(not self:isEnabled()) end,
+        },
+        {
+            text_func = function()
+                return self:tr("display_mode", self:getDisplayMode() == "inline"
+                    and self:tr("mode_inline") or self:tr("mode_tap"))
+            end,
+            enabled_func = function() return self:isSupportedDocument() and self:hasDB() end,
+            sub_item_table_func = function()
+                return {
+                    {
+                        text = self:tr("mode_tap"),
+                        checked_func = function() return self:getDisplayMode() == "tap" end,
+                        radio = true,
+                        callback = function() self:setDisplayMode("tap") end,
+                    },
+                    {
+                        text = self:tr("mode_inline"),
+                        checked_func = function() return self:getDisplayMode() == "inline" end,
+                        radio = true,
+                        callback = function() self:setDisplayMode("inline") end,
+                    },
+                }
+            end,
+        },
+        {
+            text_func = function()
+                return self:tr("inline_length", self:getInlineHintLength() == "micro"
+                    and self:tr("micro_gloss") or self:tr("short_gloss"))
+            end,
+            enabled_func = function()
+                return self:isSupportedDocument() and self:hasDB()
+                    and self:getDisplayMode() == "inline"
+            end,
+            sub_item_table_func = function()
+                local items = {}
+                for _, length in ipairs(WordWiseMicrogloss.lengths()) do
+                    items[#items + 1] = {
+                        text = length == "micro" and self:tr("micro_gloss") or self:tr("short_gloss"),
+                        checked_func = function() return self:getInlineHintLength() == length end,
+                        radio = true,
+                        callback = function() self:setInlineHintLength(length) end,
+                    }
+                end
+                return items
+            end,
         },
         {
             text_func = function()

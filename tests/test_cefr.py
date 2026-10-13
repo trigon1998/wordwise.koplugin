@@ -54,6 +54,20 @@ assert 'self.bubble:show(hint, size, self:tr("tap_for_details"))' in main
 assert 'self.bubble:contains(pos)' in main
 assert 'return false -- Ordinary page taps still pass through to KOReader' not in main
 assert 'self:restoreLegacyLineSpacing()' in main
+assert 'function WordWise:getDisplayMode()' in main
+assert 'function WordWise:setDisplayMode(mode)' in main
+assert 'self.ui.doc_settings:saveSetting("wordwise_display_mode", mode)' in main
+assert 'function WordWise:enableInlineSpacing()' in main
+assert 'WordWiseInline.paint(bb, x, y, self.hints' in main
+assert 'function WordWise:setInlineHintLength(length)' in main
+assert 'hint.inline_visible' in main
+assert 'pointInBox(pos, hint.hit_box)' in main
+assert 'if self:getDisplayMode() == "inline" then' in main
+assert 'WordWiseMicrogloss.lengths()' in main
+assert 'applied ~= nil and applied ~= before' in main
+assert 'wordwise_inline.lua' in (ROOT / 'wordwise_ota.lua').read_text()
+assert 'wordwise_microgloss.lua' in (ROOT / 'wordwise_ota.lua').read_text()
+print('dual_display_and_microgloss_ota_guards_ok')
 assert 'self:setLineSpacing(on)' not in main
 assert 'HINT_INTERLINE_MIN' not in main
 print('underline_bubble_tap_and_no_reflow_guards_ok')
@@ -112,8 +126,8 @@ assert 'checksum_url' in ota and 'SHA256.digest_file' in ota
 assert 'MAX_EXTRACTED_SIZE' in ota and 'MAX_ARCHIVE_ENTRIES' in ota
 assert 'wordwise_hint_dialog.lua' in ota and 'wordwise_l10n.lua' in ota
 assert 'archive version does not match release tag' in ota
-assert 'current_version = "0.2.14"' in ota
-assert 'version = "0.2.14"' in meta
+assert 'current_version = "0.2.15"' in ota
+assert 'version = "0.2.15"' in meta
 assert 'known_words.lua' in (ROOT / 'DEVELOPMENT.md').read_text()
 print('ota_contract_guards_ok')
 db_lua = (ROOT / 'wordwise_db.lua').read_text()
